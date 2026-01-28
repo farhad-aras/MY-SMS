@@ -1,0 +1,344 @@
+package com.example.mysms.ui.theme
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mysms.data.SmsEntity
+import com.example.mysms.viewmodel.HomeViewModel
+import kotlinx.coroutines.delay
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Log.d("MainActivity", "🟢 Activity created")
+        setContent {
+            MaterialTheme {
+                MySMSApp()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MySMSApp() {
+    val context = LocalContext.current
+    val application = context.applicationContext as android.app.Application
+    val vm: HomeViewModel = viewModel(
+        factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+    )
+
+    // مدیریت اولیه
+    val appPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+    var isFirstLoadDone by remember { mutableStateOf(appPrefs.getBoolean("initial_load_done", false)) }
+
+    // مدیریت پین شده‌ها
+    val pinnedPrefs = remember { context.getSharedPreferences("pinned_chats", Context.MODE_PRIVATE) }
+    val pinnedList = remember { mutableStateListOf<String>() }
+
+    // Stateها
+    val smsList by vm.smsList.collectAsState()
+    val progress by vm.loadingProgress.collectAsState()
+    val isSyncing by vm.isSyncing.collectAsState()
+    val sim1Id by vm.sim1Id.collectAsState()
+    val sim2Id by vm.sim2Id.collectAsState()
+
+    // پیام‌های موقت و وضعیت ارسال
+    val tempMessages by vm.tempMessages.collectAsState()
+    val sendingState by vm.sendingState.collectAsState()
+
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedContact by remember { mutableStateOf<String?>(null) }
+
+    // درخواست مجوز
+    val requestPermissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.all { it.value }
+        if (allGranted) {
+            Toast.makeText(context, "✅ مجوزها تأیید شد", Toast.LENGTH_SHORT).show()
+            // بلافاصله سینک را شروع کن
+            vm.startInitialSync()
+            isFirstLoadDone = true
+            appPrefs.edit().putBoolean("initial_load_done", true).apply()
+        } else {
+            Toast.makeText(context, "لطفاً تمام مجوزها را تأیید کنید", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // محاسبه مکالمات - منطق از کد قدیمی
+    val sortedConversations by remember(smsList, pinnedList.size, vm.drafts, selectedTab) {
+        derivedStateOf {
+            val allConversations = smsList.groupBy { it.address }.map { entry ->
+                val address = entry.key
+                val messages = entry.value
+                val lastMsg = messages.maxByOrNull { it.date }!!
+
+                val unreadCount = messages.count { !it.read && it.type == 1 }
+                val draft = vm.drafts[address]
+                val showDraft = !draft.isNullOrBlank()
+                val isPinned = pinnedList.contains(address)
+
+                val displayMsg = lastMsg.copy(
+                    body = if (showDraft) "پیش‌نویس: $draft" else lastMsg.body,
+                    date = if (showDraft) System.currentTimeMillis() else lastMsg.date
+                )
+
+                ConversationData(
+                    sms = displayMsg,
+                    isDraft = showDraft,
+                    unreadCount = unreadCount,
+                    isPinned = isPinned,
+                    originalDate = displayMsg.date
+                )
+            }
+
+            val filtered = when (selectedTab) {
+                0 -> allConversations.filter { it.sms.subId == sim1Id }
+                1 -> allConversations.filter { it.sms.subId == sim2Id }
+                else -> allConversations
+            }
+
+            filtered.sortedWith(
+                compareByDescending<ConversationData> { it.isPinned }
+                    .thenByDescending { it.unreadCount > 0 }
+                    .thenByDescending { it.originalDate }
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pinnedList.clear()
+        pinnedList.addAll(pinnedPrefs.all.keys)
+    }
+
+    // تشخیص اتمام بارگذاری اولیه
+    LaunchedEffect(isSyncing, progress) {
+        if (!isSyncing && progress == 100 && !isFirstLoadDone && smsList.isNotEmpty()) {
+            isFirstLoadDone = true
+            appPrefs.edit().putBoolean("initial_load_done", true).apply()
+        }
+    }
+
+    // صفحه 1: بارگذاری اولیه (اگر قبلا انجام نشده)
+    if (!isFirstLoadDone) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "به پیام‌رسان خوش آمدید",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "برای نمایش پیامک‌ها، ابتدا باید آن‌ها را بارگذاری کنید.",
+                    textAlign = TextAlign.Center,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+
+                if (isSyncing) {
+                    LinearProgressIndicator(
+                        progress = {
+                            val progressValue = if (progress == 0) 0f else progress.toFloat() / 100f
+                            progressValue
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "%$progress تکمیل شد",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Button(
+                        onClick = {
+                            // بررسی مجوزها
+                            val requiredPermissions = arrayOf(
+                                Manifest.permission.READ_SMS,
+                                Manifest.permission.RECEIVE_SMS,
+                                Manifest.permission.READ_PHONE_STATE,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                                Manifest.permission.READ_CONTACTS
+                            )
+
+                            val missingPermissions = requiredPermissions.filter {
+                                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+                            }
+
+                            if (missingPermissions.isNotEmpty()) {
+                                // درخواست مجوز
+                                requestPermissionsLauncher.launch(missingPermissions.toTypedArray())
+                            } else {
+                                // شروع سینک
+                                vm.startInitialSync()
+                                isFirstLoadDone = true
+                                appPrefs.edit().putBoolean("initial_load_done", true).apply()
+                                Toast.makeText(context, "در حال بارگذاری پیامک‌ها...", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                    ) {
+                        Text("بارگذاری پیامک‌ها")
+                    }
+                }
+            }
+        }
+    }
+    // صفحه 2: چت داخلی
+    else if (selectedContact != null) {
+        val contactAddress = selectedContact!!
+        LaunchedEffect(contactAddress) {
+            // علامت‌گذاری پیام‌های این مخاطب به عنوان خوانده شده
+            vm.markConversationAsRead(contactAddress)
+        }
+        // دریافت پیام‌های این مخاطب
+        val contactMessages by remember(contactAddress, smsList, tempMessages) {
+            derivedStateOf {
+                vm.getCombinedMessages(contactAddress)
+            }
+        }
+
+        // وضعیت ارسال
+        val isSendingForThisContact by remember(sendingState) {
+            derivedStateOf {
+                sendingState[contactAddress] == true
+            }
+        }
+
+        // پیش‌نویس فعلی
+        val currentDraft by remember(vm.drafts[contactAddress]) {
+            mutableStateOf(vm.drafts[contactAddress] ?: "")
+        }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            // هدر
+
+
+            // استفاده از ChatScreen از فایل جداگانه
+            ChatScreen(
+                address = contactAddress,
+                messages = contactMessages,
+                onBack = { selectedContact = null },
+                onSendClick = { message ->
+                    // ارسال با سیم‌کارت انتخاب شده در تب
+                    val defaultSimId = when(selectedTab) {
+                        0 -> sim1Id ?: -1
+                        1 -> sim2Id ?: -1
+                        else -> -1
+                    }
+                    if (defaultSimId != -1 && message.isNotBlank()) {
+                        vm.sendSms(contactAddress, message, defaultSimId)
+                    }
+                },
+                draftMessage = currentDraft,
+                onDraftChange = { newText ->
+                    vm.updateDraft(contactAddress, newText)
+                },
+                isSending = isSendingForThisContact
+            )
+        }
+    }
+    // صفحه 3: لیست اصلی
+    else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // === این بخش را اضافه کنید ===
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        "پیام‌رسان",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            )
+            // === پایان بخش اضافه شده ===
+            // تب‌های سیم‌کارت
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = {
+                        Text("سیم‌کارت ۱")
+                    }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = {
+                        Text("سیم‌کارت ۲")
+                    }
+                )
+            }
+
+            // Progress Indicator
+            if (isSyncing || (progress > 0 && progress < 100)) {
+                LinearProgressIndicator(
+                    progress = {
+                        val progressValue = if (progress == 0) 0f else progress.toFloat() / 100f
+                        progressValue
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            // استفاده از ConversationListScreen
+            ConversationListScreen(
+                sortedConversations = sortedConversations,
+                context = context,
+                pinnedList = pinnedList,
+                pinnedPrefs = pinnedPrefs,
+                listState = rememberLazyListState(),
+                onContactClick = { address -> selectedContact = address }
+            )
+        }
+    }
+}
+
+// داده‌های مدل
+data class ConversationData(
+    val sms: SmsEntity,
+    val isDraft: Boolean,
+    val unreadCount: Int,
+    val isPinned: Boolean,
+    val originalDate: Long
+)
