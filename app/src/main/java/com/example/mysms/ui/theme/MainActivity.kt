@@ -1,5 +1,6 @@
 package com.example.mysms.ui.theme
 
+import androidx.compose.material3.Badge
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -52,6 +53,8 @@ fun MySMSApp() {
         factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
     )
 
+
+
     // مدیریت اولیه
     val appPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
     var isFirstLoadDone by remember { mutableStateOf(appPrefs.getBoolean("initial_load_done", false)) }
@@ -70,6 +73,19 @@ fun MySMSApp() {
     // پیام‌های موقت و وضعیت ارسال
     val tempMessages by vm.tempMessages.collectAsState()
     val sendingState by vm.sendingState.collectAsState()
+
+    // تعداد پیام‌های خوانده نشده برای هر سیم‌کارت
+    val unreadCounts by remember(smsList, sim1Id, sim2Id) {
+        derivedStateOf {
+            val sim1Unread = smsList.count { sms ->
+                !sms.read && sms.type == 1 && sms.subId == sim1Id
+            }
+            val sim2Unread = smsList.count { sms ->
+                !sms.read && sms.type == 1 && sms.subId == sim2Id
+            }
+            Pair(sim1Unread, sim2Unread)
+        }
+    }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedContact by remember { mutableStateOf<String?>(null) }
@@ -125,7 +141,7 @@ fun MySMSApp() {
 
             filtered.sortedWith(
                 compareByDescending<ConversationData> { it.isPinned }
-                    .thenByDescending { it.unreadCount > 0 }
+                   // .thenByDescending { it.unreadCount > 0 }
                     .thenByDescending { it.originalDate }
             )
         }
@@ -298,18 +314,37 @@ fun MySMSApp() {
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     text = {
-                        Text("سیم‌کارت ۱")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("سیم‌کارت ۱")
+                            if (unreadCounts.first > 0) {
+                                Spacer(modifier = Modifier.width(4.dp)) // فاصله بین متن و Badge
+                                Badge {
+                                    Text(unreadCounts.first.toString())
+                                }
+                            }
+                        }
                     }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
                     text = {
-                        Text("سیم‌کارت ۲")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("سیم‌کارت ۲")
+                            if (unreadCounts.second > 0) {
+                                Spacer(modifier = Modifier.width(4.dp)) // فاصله بین متن و Badge
+                                Badge {
+                                    Text(unreadCounts.second.toString())
+                                }
+                            }
+                        }
                     }
                 )
             }
-
             // Progress Indicator
             if (isSyncing || (progress > 0 && progress < 100)) {
                 LinearProgressIndicator(

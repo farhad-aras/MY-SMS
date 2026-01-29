@@ -27,6 +27,15 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
         const val SMS_DELIVERED_ACTION = "com.example.mysms.SMS_DELIVERED"
     }
 
+    // ✅ تابع جدید: دریافت لیست مکالمات (آخرین پیام هر مخاطب)
+    fun getConversationsFlow(): Flow<List<SmsEntity>> = smsDao.getConversationsFlow()
+
+    // ✅ تابع جدید: دریافت پیام‌های یک مخاطب خاص
+    fun getSmsByAddressFlow(address: String): Flow<List<SmsEntity>> = smsDao.getSmsByAddressFlow(address)
+
+    // ✅ تابع موجود - برای سایر موارد استفاده می‌شود
+    fun getAllSmsFlow(): Flow<List<SmsEntity>> = smsDao.getAllSmsFlow()
+
     // ✅ تابع جدید: دریافت شناسه سیم‌کارت‌ها
     fun getSimIds(): Pair<Int?, Int?> {
         var sim1Id: Int? = null
@@ -259,6 +268,4 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
     suspend fun markAsRead(address: String) {
         smsDao.markAsRead(address)
     }
-
-    fun getAllSmsFlow(): Flow<List<SmsEntity>> = smsDao.getAllSmsFlow()
 }

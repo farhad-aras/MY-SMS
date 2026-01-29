@@ -21,9 +21,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val smsDao = AppDatabase.getDatabase(application).smsDao()
     private val repository = SmsRepository(application, smsDao)
 
-    // لیست پیام‌ها از دیتابیس
+    // لیست تمام پیام‌ها از دیتابیس (برای صفحه چت با یک مخاطب)
     private val _smsList = MutableStateFlow<List<SmsEntity>>(emptyList())
     val smsList = _smsList.asStateFlow()
+
+    // ✅ لیست مکالمات (آخرین پیام هر مخاطب) - برای صفحه اصلی
+    private val _conversations = MutableStateFlow<List<SmsEntity>>(emptyList())
+    val conversations = _conversations.asStateFlow()
 
     // وضعیت سینک
     private val _isSyncing = MutableStateFlow(false)
@@ -62,16 +66,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             // 2. بازیابی پیش‌نویس‌ها
             restoreDrafts()
 
-            // 3. مشاهده دیتابیس (بدون تست خودکار)
+            // 3. مشاهده دیتابیس (همه پیام‌ها و مکالمات)
             viewModelScope.launch {
-                delay(500)
-                observeDatabase()
+                // مشاهده تمام پیام‌ها (برای صفحه چت)
+                launch { observeAllSms() }
+                // مشاهده مکالمات (برای صفحه اصلی)
+                launch { observeConversations() }
             }
 
             Log.d("HomeViewModel", "✅ ViewModel init completed")
         } catch (e: Exception) {
             Log.e("HomeViewModel", "💥 Error in init: ${e.message}", e)
             _smsList.value = emptyList()
+            _conversations.value = emptyList()
+        }
+    }
+
+    // ---------------------------
+    // مشاهده flow تمام پیام‌ها
+    // ---------------------------
+    private fun observeAllSms() {
+        viewModelScope.launch {
+            repository.getAllSmsFlow().collect { list ->
+                Log.d("HomeViewModel", "📊 All SMS Flow update: ${list.size} SMS")
+                _smsList.value = list
+            }
+        }
+    }
+
+    // ---------------------------
+    // ✅ مشاهده flow مکالمات (آخرین پیام هر مخاطب)
+    // ---------------------------
+    private fun observeConversations() {
+        viewModelScope.launch {
+            repository.getConversationsFlow().collect { list ->
+                Log.d("HomeViewModel", "📞 Conversations Flow update: ${list.size} conversations")
+                if (list.isNotEmpty()) {
+                    list.forEachIndexed { index, sms ->
+                        Log.d("HomeViewModel", "  ${index + 1}. ${sms.address} - ${sms.body.take(20)} - ${sms.date}")
+                    }
+                } else {
+                    Log.d("HomeViewModel", "📭 Conversations list is EMPTY")
+                }
+                _conversations.value = list
+            }
         }
     }
 
@@ -104,10 +142,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     db.smsDao().insertAll(listOf(testSms))
                     Log.d("HomeViewModel", "✅ Test SMS added to DB")
-
-                    // دوباره چک کن
-                    val newCount = db.smsDao().getAllSms().size
-                    Log.d("HomeViewModel", "📊 New total: $newCount")
                 } else {
                     // نمونه‌ای از رکوردها رو نشون بده
                     val sample = db.smsDao().getAllSms().take(3)
@@ -130,14 +164,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             Log.d("HomeViewModel", "🔧 Manual DB test triggered")
             testDatabase()
-
-            // همچنین Flow رو refresh کن
-            withContext(Dispatchers.IO) {
-                val db = AppDatabase.getDatabase(getApplication())
-                val all = db.smsDao().getAllSms()
-                _smsList.value = all
-                Log.d("HomeViewModel", "🔄 SMS list updated: ${all.size} items")
-            }
         }
     }
 
@@ -156,24 +182,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun updateDraft(address: String, text: String) {
         drafts[address] = text
         prefs.edit().putString(address, text).apply()
-    }
-
-    // ---------------------------
-    // Database
-    // ---------------------------
-
-    private fun observeDatabase() {
-        viewModelScope.launch {
-            repository.getAllSmsFlow().collect { list ->
-                Log.d("HomeViewModel", "📊 Flow update: ${list.size} SMS")
-                if (list.isNotEmpty()) {
-                    Log.d("HomeViewModel", "📞 Sample: ${list.first().address} - ${list.first().body.take(30)}")
-                } else {
-                    Log.d("HomeViewModel", "📭 Flow returned empty list")
-                }
-                _smsList.value = list
-            }
-        }
     }
 
     // ---------------------------
@@ -257,14 +265,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (progress >= 100) {
                     _isSyncing.value = false
                     Log.d("HomeViewModel", "✅ Initial sync completed")
-
-                    // بعد از سینک، Flow رو refresh کن
-                    withContext(Dispatchers.IO) {
-                        val db = AppDatabase.getDatabase(getApplication())
-                        val all = db.smsDao().getAllSms()
-                        _smsList.value = all
-                        Log.d("HomeViewModel", "🔄 Updated list after sync: ${all.size} items")
-                    }
+                    // نیازی به آپدیت دستی نیست - flowها به‌طور خودکار آپدیت می‌شوند
                 }
             }
         }
@@ -287,7 +288,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun getCombinedMessages(address: String): List<SmsEntity> {
         val db = _smsList.value.filter { it.address == address }
         val temp = _tempMessages.value.filter { it.address == address }
-        return (db + temp).sortedBy { it.date }
+        return (db + temp).sortedByDescending { it.date }
     }
 
     fun markConversationAsRead(address: String) {
@@ -295,4 +296,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             repository.markAsRead(address)
         }
     }
+
+    // ---------------------------
+    // ✅ تابع جدید: دریافت پیام‌های یک مخاطب خاص
+    // ---------------------------
+    fun getMessagesByAddressFlow(address: String) = repository.getSmsByAddressFlow(address)
 }
