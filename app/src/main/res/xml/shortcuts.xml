@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_sms"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_new_sms_short"
+        android:shortcutLongLabel="@string/shortcut_new_sms_long">
+        <intent
+            android:action="android.intent.action.SENDTO"
+            android:targetPackage="com.example.mysms"
+            android:targetClass="com.example.mysms.ui.theme.MainActivity">
+            <data android:scheme="smsto" />
+        </intent>
+    </shortcut>
+</shortcuts>

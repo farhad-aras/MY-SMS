@@ -1,8 +1,10 @@
 package com.example.mysms.viewmodel
 
+
+import kotlinx.coroutines.withContext
+import android.util.Log
 import android.app.Application
 import android.content.Context
-import android.util.Log
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -241,6 +243,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    // تابع ایمپورت سریع پیام‌ها
+    suspend fun quickImportSms(limit: Int = 50): Int {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                android.util.Log.d("HomeViewModel", "🚀 Quick importing $limit messages")
+                val count = repository.quickImportSms(limit)
+                android.util.Log.d("HomeViewModel", "✅ Quick import completed: $count messages")
+                count
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "❌ Quick import failed", e)
+                0
+            }
+        }
+    }
 
     private fun markTempAsFailed(tempSms: SmsEntity) {
         _tempMessages.value = _tempMessages.value.map {
@@ -291,9 +307,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return (db + temp).sortedByDescending { it.date }
     }
 
+    // تابع جدید برای mark single message
+    fun markMessageAsRead(messageId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                smsDao.markSingleMessageAsRead(messageId)
+                Log.d("HomeViewModel", "✅ Message $messageId marked as read")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error marking message as read", e)
+            }
+        }
+    }
+    // تابع اصلاح شده برای mark conversation
     fun markConversationAsRead(address: String) {
-        viewModelScope.launch {
-            repository.markAsRead(address)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                smsDao.markAsRead(address)
+                Log.d("HomeViewModel", "✅ Conversation with $address marked as read")
+
+                // فورس آپدیت لیست
+                val updatedList = smsDao.getAllSms()
+                _smsList.value = updatedList
+
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error marking conversation as read", e)
+            }
         }
     }
 

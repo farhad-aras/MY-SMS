@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">MySMS</string>
+    <string name="shortcut_new_sms_short">پیام جدید</string>
+    <string name="shortcut_new_sms_long">ایجاد پیام جدید</string>
 </resources>

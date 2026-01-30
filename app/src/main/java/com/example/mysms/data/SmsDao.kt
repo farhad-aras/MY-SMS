@@ -33,9 +33,13 @@ interface SmsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(sms: List<SmsEntity>)
 
-    @Query("UPDATE sms_table SET read = 1 WHERE address = :address AND read = 0")
+    @Query("UPDATE sms_table SET read = 1 WHERE address = :address")
     suspend fun markAsRead(address: String)
 
     @Query("UPDATE sms_table SET read = 1 WHERE id = :messageId")
     suspend fun markMessageAsRead(messageId: Long)
+
+    // کوئری جدید برای آپدیت فقط یک پیام خاص
+    @Query("UPDATE sms_table SET read = 1 WHERE id = :messageId")
+    suspend fun markSingleMessageAsRead(messageId: String)
 }

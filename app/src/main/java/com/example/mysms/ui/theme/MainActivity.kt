@@ -1,6 +1,7 @@
 package com.example.mysms.ui.theme
 
-import androidx.compose.material3.Badge
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +35,9 @@ import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
+
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "🟢 Activity created")
@@ -48,12 +53,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MySMSApp() {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     val application = context.applicationContext as android.app.Application
     val vm: HomeViewModel = viewModel(
         factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
     )
-
-
 
     // مدیریت اولیه
     val appPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
@@ -73,6 +78,35 @@ fun MySMSApp() {
     // پیام‌های موقت و وضعیت ارسال
     val tempMessages by vm.tempMessages.collectAsState()
     val sendingState by vm.sendingState.collectAsState()
+
+    // در تابع MySMSApp
+    var hasNewMessages by remember { mutableStateOf(false) }
+    var newMessageCount by remember { mutableStateOf(0) }
+
+// محاسبه پیام‌های خوانده‌نشده
+    val unreadMessages by remember(smsList) {
+        derivedStateOf {
+            smsList.count { !it.read && it.type == 1 }
+        }
+    }
+
+// رفرش خودکار هر 10 ثانیه
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(10000) // 10 ثانیه
+
+            // فقط اگر برنامه در حال اجراست
+            if (isFirstLoadDone) {
+                // چک برای پیام‌های جدید
+                val currentUnread = smsList.count { !it.read && it.type == 1 }
+                if (currentUnread > newMessageCount) {
+                    newMessageCount = currentUnread
+                    hasNewMessages = true
+                    Log.d("AutoRefresh", "🆕 New messages detected: $currentUnread")
+                }
+            }
+        }
+    }
 
     // تعداد پیام‌های خوانده نشده برای هر سیم‌کارت
     val unreadCounts by remember(smsList, sim1Id, sim2Id) {
@@ -141,7 +175,6 @@ fun MySMSApp() {
 
             filtered.sortedWith(
                 compareByDescending<ConversationData> { it.isPinned }
-                   // .thenByDescending { it.unreadCount > 0 }
                     .thenByDescending { it.originalDate }
             )
         }
@@ -207,9 +240,9 @@ fun MySMSApp() {
                             val requiredPermissions = arrayOf(
                                 Manifest.permission.READ_SMS,
                                 Manifest.permission.RECEIVE_SMS,
+                                Manifest.permission.READ_CONTACTS,
                                 Manifest.permission.READ_PHONE_STATE,
-                                Manifest.permission.POST_NOTIFICATIONS,
-                                Manifest.permission.READ_CONTACTS
+                                Manifest.permission.POST_NOTIFICATIONS
                             )
 
                             val missingPermissions = requiredPermissions.filter {
@@ -264,9 +297,6 @@ fun MySMSApp() {
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // هدر
-
-
             // استفاده از ChatScreen از فایل جداگانه
             ChatScreen(
                 address = contactAddress,
@@ -319,7 +349,7 @@ fun MySMSApp() {
                         ) {
                             Text("سیم‌کارت ۱")
                             if (unreadCounts.first > 0) {
-                                Spacer(modifier = Modifier.width(4.dp)) // فاصله بین متن و Badge
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Badge {
                                     Text(unreadCounts.first.toString())
                                 }
@@ -336,7 +366,7 @@ fun MySMSApp() {
                         ) {
                             Text("سیم‌کارت ۲")
                             if (unreadCounts.second > 0) {
-                                Spacer(modifier = Modifier.width(4.dp)) // فاصله بین متن و Badge
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Badge {
                                     Text(unreadCounts.second.toString())
                                 }
@@ -345,6 +375,7 @@ fun MySMSApp() {
                     }
                 )
             }
+
             // Progress Indicator
             if (isSyncing || (progress > 0 && progress < 100)) {
                 LinearProgressIndicator(
@@ -354,6 +385,77 @@ fun MySMSApp() {
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+
+            // دکمه Refresh
+// جایگزین کردن دکمه refresh قبلی
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "پیام‌ها: ${smsList.size}",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+                    if (unreadMessages > 0) {
+                        Text(
+                            "خوانده‌نشده: $unreadMessages",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Row {
+                    // دکمه mark all as read
+                    if (unreadMessages > 0) {
+                        TextButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    // اینجا باید پیام‌های خوانده نشده را پیدا کنیم
+                                    val unreadMessages = smsList.filter { !it.read && it.type == 1 }
+                                    unreadMessages.forEach { sms ->
+                                        vm.markMessageAsRead(sms.id)
+                                    }
+
+                                    // یا اگر تابع batch در ViewModel دارید:
+                                    // vm.markAllMessagesAsRead()
+
+                                    // تویست در main thread
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        Toast.makeText(context, "همه پیام‌ها خوانده شدند", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("خواندن همه", fontSize = 12.sp)
+                        }
+                    }
+
+                    // دکمه refresh
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                vm.startInitialSync()
+                                // تویست باید در main thread باشد
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    Toast.makeText(context, "در حال بروزرسانی...", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "بارگذاری مجدد",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
 
             // استفاده از ConversationListScreen

@@ -1,9 +1,9 @@
 package com.example.mysms.repository
 
+import android.provider.Telephony
 import kotlin.concurrent.thread
 import kotlinx.coroutines.delay
 import android.content.Context
-import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
 import com.example.mysms.data.SmsDao
@@ -207,6 +207,75 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
         }
     }
 
+
+    // تابع ایمپورت سریع پیام‌ها
+    suspend fun quickImportSms(limit: Int = 100): Int {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                Log.d("QuickImport", "🚀 Starting quick SMS import")
+
+                val cursor = context.contentResolver.query(
+                    android.provider.Telephony.Sms.CONTENT_URI,
+                    null,
+                    null,
+                    null,
+                    "${android.provider.Telephony.Sms.DATE} DESC"
+                )
+
+                var count = 0
+                cursor?.use {
+                    val total = it.count
+                    Log.d("QuickImport", "📊 Total messages available: $total")
+
+                    val idIdx = it.getColumnIndex(android.provider.Telephony.Sms._ID)
+                    val addrIdx = it.getColumnIndex(android.provider.Telephony.Sms.ADDRESS)
+                    val bodyIdx = it.getColumnIndex(android.provider.Telephony.Sms.BODY)
+                    val dateIdx = it.getColumnIndex(android.provider.Telephony.Sms.DATE)
+                    val typeIdx = it.getColumnIndex(android.provider.Telephony.Sms.TYPE)
+                    val subIdIdx = it.getColumnIndex("sub_id")
+                    val readIdx = it.getColumnIndex(android.provider.Telephony.Sms.READ)
+
+                    val smsList = mutableListOf<com.example.mysms.data.SmsEntity>()
+
+                    // فقط limit پیام اول را بگیر
+                    while (it.moveToNext() && count < limit) {
+                        try {
+                            val id = if (idIdx != -1) it.getString(idIdx) else "imp_${System.currentTimeMillis()}_$count"
+                            val address = if (addrIdx != -1) it.getString(addrIdx) ?: "Unknown" else "Unknown"
+                            val body = if (bodyIdx != -1) it.getString(bodyIdx) ?: "" else ""
+                            val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
+                            val type = if (typeIdx != -1) it.getInt(typeIdx) else 1
+                            val subId = if (subIdIdx != -1) it.getInt(subIdIdx) else -1
+                            val isRead = if (readIdx != -1) it.getInt(readIdx) == 1 else true
+
+                            smsList.add(com.example.mysms.data.SmsEntity(id, address, body, date, type, subId, isRead))
+                            count++
+
+                            if (count % 10 == 0) {
+                                Log.d("QuickImport", "📥 Imported: $count")
+                            }
+
+                        } catch (e: Exception) {
+                            Log.e("QuickImport", "Error reading message $count", e)
+                        }
+                    }
+
+                    if (smsList.isNotEmpty()) {
+                        smsDao.insertAll(smsList)
+                        Log.d("QuickImport", "✅ Successfully imported $count messages")
+                    }
+                }
+
+                cursor?.close()
+                count
+
+            } catch (e: Exception) {
+                Log.e("QuickImport", "💥 Quick import error", e)
+                0
+            }
+        }
+    }
+
     // تابع جدید برای سینک پیام ارسالی از سیستم
     private suspend fun syncSentSmsFromSystem(address: String, body: String, subId: Int) {
         try {
@@ -268,4 +337,6 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
     suspend fun markAsRead(address: String) {
         smsDao.markAsRead(address)
     }
+
+
 }

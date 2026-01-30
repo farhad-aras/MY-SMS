@@ -1,13 +1,21 @@
 package com.example.mysms.ui.theme
 
+import android.R.attr.description
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.os.Build
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.app.NotificationCompat
+import com.example.mysms.R
 import com.example.mysms.data.AppDatabase
 import com.example.mysms.data.SmsEntity
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +27,14 @@ class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Log.d("SmsReceiver", "🔔 onReceive called! Action: ${intent.action}")
+
+        // لاگ تمام extras برای دیدن sub_id واقعی
+        intent.extras?.keySet()?.forEach { key ->
+            val value = intent.extras?.get(key)
+            if (key.contains("sub") || key.contains("subscription") || key.contains("sim") || key.contains("phone")) {
+                Log.d("SmsReceiver", "📌 Found subId key: $key = $value")
+            }
+        }
 
         // بررسی action
         val action = intent.action
@@ -78,7 +94,7 @@ class SmsReceiver : BroadcastReceiver() {
 
                 for (sms in messages) {
                     if (sms != null) {
-                        val entity = createSmsEntity(sms)
+                        val entity = createSmsEntity(sms, intent)
                         smsList.add(entity)
                         Log.d("SmsReceiver", "Processed SMS from: ${sms.originatingAddress}")
                     }
@@ -129,7 +145,7 @@ class SmsReceiver : BroadcastReceiver() {
                             SmsMessage.createFromPdu(pdu)
                         }
 
-                        val entity = createSmsEntity(sms)
+                        val entity = createSmsEntity(sms, intent)
                         smsList.add(entity)
                         Log.d("SmsReceiver", "Processed legacy SMS from: ${sms.originatingAddress}")
 
@@ -152,10 +168,44 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun createSmsEntity(sms: SmsMessage): SmsEntity {
+    private fun createSmsEntity(sms: SmsMessage, intent: Intent): SmsEntity {
         val address = sms.originatingAddress ?: "Unknown"
         val body = sms.messageBody ?: ""
         val timestamp = if (sms.timestampMillis > 0) sms.timestampMillis else System.currentTimeMillis()
+
+        // استخراج subId از intent
+        var subId = -1
+        val extras = intent.extras
+
+        // روش‌های مختلف استخراج subId
+        if (extras != null) {
+            // روش 1: کلیدهای مختلف
+            when {
+                extras.containsKey("subscription") -> subId = extras.getInt("subscription", -1)
+                extras.containsKey("sub_id") -> subId = extras.getInt("sub_id", -1)
+                extras.containsKey("phone") -> subId = extras.getInt("phone", -1)
+                extras.containsKey("simId") -> subId = extras.getInt("simId", -1)
+            }
+
+            // روش 2: اگر باز هم پیدا نکردیم
+            if (subId == -1) {
+                extras.keySet().forEach { key ->
+                    if (key.contains("sub") || key.contains("sim") || key.contains("phone")) {
+                        try {
+                            val value = extras.get(key)
+                            if (value is Int) {
+                                subId = value
+                                Log.d("SmsReceiver", "🔍 Found subId in key '$key': $subId")
+                            }
+                        } catch (e: Exception) {
+                            // ignore
+                        }
+                    }
+                }
+            }
+        }
+
+        Log.d("SmsReceiver", "📱 Extracted subId: $subId for SMS from: $address")
 
         return SmsEntity(
             id = "sms_${timestamp}_${UUID.randomUUID().toString().substring(0, 8)}",
@@ -163,7 +213,7 @@ class SmsReceiver : BroadcastReceiver() {
             body = body,
             date = timestamp,
             type = 1, // دریافتی
-            subId = 0, // پیش‌فرض
+            subId = subId, // استفاده از subId واقعی
             read = false
         )
     }
@@ -173,6 +223,12 @@ class SmsReceiver : BroadcastReceiver() {
             val database = AppDatabase.getDatabase(context)
             database.smsDao().insertAll(smsList)
             Log.d("SmsReceiver", "💾 Database save successful")
+
+            // نمایش نوتیفیکیشن برای هر پیام
+            smsList.forEach { sms ->
+                showNotification(context, sms)
+            }
+
         } catch (e: Exception) {
             Log.e("SmsReceiver", "💥 Database save failed: ${e.message}", e)
         }
@@ -206,6 +262,59 @@ class SmsReceiver : BroadcastReceiver() {
             } catch (e: Exception) {
                 Log.e("SmsReceiver", "Error processing sent status: ${e.message}")
             }
+        }
+    }
+    private fun showNotification(context: Context, sms: SmsEntity) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // ایجاد کانال برای اندروید 8+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    "sms_channel",
+                    "پیام‌های جدید",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "پیام‌های دریافتی SMS"
+                    enableLights(true)
+                    lightColor = Color.RED
+                    enableVibration(true)
+                    vibrationPattern = longArrayOf(100, 200, 100, 200)
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            // ایجاد intent برای باز کردن برنامه
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                putExtra("open_chat", sms.address)
+            }
+
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                sms.address.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // ساخت نوتیفیکیشن
+            val notification = NotificationCompat.Builder(context, "sms_channel")
+                .setContentTitle("پیام جدید")
+                .setContentText("از: ${sms.address}\n${sms.body.take(50)}${if (sms.body.length > 50) "..." else ""}")
+                .setSmallIcon(android.R.drawable.ic_dialog_email)
+                .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .build()
+
+            // نمایش نوتیفیکیشن
+            notificationManager.notify(sms.address.hashCode(), notification)
+            Log.d("SmsReceiver", "📢 Notification shown for ${sms.address}")
+
+        } catch (e: Exception) {
+            Log.e("SmsReceiver", "Error showing notification: ${e.message}")
         }
     }
 }
