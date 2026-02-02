@@ -553,7 +553,7 @@ fun MySMSApp() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             // استفاده از نام سفارشی
-                            Text(vm.sim1TabName.value)
+                            Text(sim1TabName)
                             if (unreadCounts.first > 0) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Badge {
@@ -571,7 +571,7 @@ fun MySMSApp() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             // استفاده از نام سفارشی
-                            Text(vm.sim2TabName.value)
+                            Text(sim2TabName)
                             if (unreadCounts.second > 0) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Badge {
