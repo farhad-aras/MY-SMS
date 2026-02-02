@@ -1,10 +1,13 @@
 package com.example.mysms.ui.theme
 
+import com.example.mysms.ui.theme.ForegroundSmsService
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -36,15 +39,91 @@ import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
-
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "🟢 Activity created")
+
+        // بررسی Intent برای بازشدن از نوتیفیکیشن
+        handleNotificationIntent(intent)
+
         setContent {
             MaterialTheme {
                 MySMSApp()
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        Log.d("MainActivity", "🔄 New Intent received")
+
+        // بررسی Intent جدید (مثلاً کلیک روی نوتیفیکیشن)
+        handleNotificationIntent(intent)
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        if (intent == null) return
+
+        Log.d("MainActivity", "🔍 Checking intent extras: ${intent.extras?.keySet()}")
+
+        // بررسی آیا از نوتیفیکیشن باز شده است؟
+        val openChat = intent.getBooleanExtra("open_chat", false)
+        val contactAddress = intent.getStringExtra("contact_address")
+        val notificationClicked = intent.getBooleanExtra("notification_clicked", false)
+
+        if ((openChat || notificationClicked) && !contactAddress.isNullOrEmpty()) {
+            Log.d("MainActivity", "🎯 Opening chat from notification for: $contactAddress")
+
+            // ذخیره اطلاعات برای استفاده در Composable
+            val prefs = getSharedPreferences("notification_prefs", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putBoolean("should_open_chat", true)
+                putString("chat_address", contactAddress)
+                putString("chat_name", intent.getStringExtra("contact_name"))
+                apply()
+            }
+
+            // نمایش Toast
+            Toast.makeText(
+                this,
+                "در حال بازکردن چت با $contactAddress",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun startForegroundServiceIfNeeded() {
+        try {
+            Log.d("MainActivity", "🚀 Starting services...")
+
+            // 1. شروع JobScheduler (برای اندروید 5+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                SmsJobService.scheduleJob(this)
+            }
+
+            // 2. شروع Foreground Service (برای نمایش نوتیفیکیشن)
+            val hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+
+            if (hasNotificationPermission) {
+                ForegroundSmsService.startService(this)
+                Log.d("MainActivity", "✅ Services started")
+            }
+
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Error starting services: ${e.message}", e)
+        }
+    }
+
+    private fun stopForegroundServiceIfNeeded() {
+        try {
+            Log.d("MainActivity", "🛑 Stopping foreground service...")
+            ForegroundSmsService.stopService(this)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error stopping foreground service: ${e.message}")
         }
     }
 }
@@ -78,6 +157,45 @@ fun MySMSApp() {
     // پیام‌های موقت و وضعیت ارسال
     val tempMessages by vm.tempMessages.collectAsState()
     val sendingState by vm.sendingState.collectAsState()
+
+    // ==================== متغیرهای اصلی UI ====================
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedContact by remember { mutableStateOf<String?>(null) }
+    // ==================== پایان متغیرهای UI ====================
+
+    // ==================== مدیریت بازکردن از نوتیفیکیشن ====================
+    val notificationPrefs = remember { context.getSharedPreferences("notification_prefs", Context.MODE_PRIVATE) }
+
+    // بررسی آیا باید چت باز شود؟
+    val shouldOpenChat = remember {
+        mutableStateOf(notificationPrefs.getBoolean("should_open_chat", false))
+    }
+    val chatAddressToOpen = remember {
+        mutableStateOf(notificationPrefs.getString("chat_address", null))
+    }
+
+    // پرش مستقیم به چت اگر از نوتیفیکیشن آمده باشد
+    LaunchedEffect(shouldOpenChat.value, chatAddressToOpen.value, isFirstLoadDone) {
+        if (shouldOpenChat.value && !chatAddressToOpen.value.isNullOrEmpty() && isFirstLoadDone) {
+            // پاک کردن فلگ
+            notificationPrefs.edit().remove("should_open_chat").apply()
+            shouldOpenChat.value = false
+
+            val address = chatAddressToOpen.value!!
+            // پرش به چت
+            selectedContact = address
+
+            // علامت‌گذاری پیام‌های خوانده نشده
+            vm.markConversationAsRead(address)
+
+            // پاک کردن آدرس
+            notificationPrefs.edit().remove("chat_address").apply()
+            chatAddressToOpen.value = null
+
+            Log.d("MySMSApp", "🚀 Auto-opening chat for: $address")
+        }
+    }
+    // ==================== پایان بخش نوتیفیکیشن ====================
 
     // در تابع MySMSApp
     var hasNewMessages by remember { mutableStateOf(false) }
@@ -120,9 +238,6 @@ fun MySMSApp() {
             Pair(sim1Unread, sim2Unread)
         }
     }
-
-    var selectedTab by remember { mutableIntStateOf(0) }
-    var selectedContact by remember { mutableStateOf<String?>(null) }
 
     // درخواست مجوز
     val requestPermissionsLauncher = rememberLauncherForActivityResult(

@@ -1,6 +1,6 @@
 package com.example.mysms.ui.theme
 
-import android.R.attr.description
+import androidx.annotation.RequiresApi
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,12 +8,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.os.Build
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import com.example.mysms.R
 import com.example.mysms.data.AppDatabase
@@ -22,11 +20,28 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.*
+import kotlin.math.absoluteValue
 
 class SmsReceiver : BroadcastReceiver() {
 
+    companion object {
+        private const val CHANNEL_ID = "sms_received_channel"
+        private const val CHANNEL_NAME = "پیام‌های دریافتی"
+        private const val CHANNEL_DESCRIPTION = "پیام‌های SMS دریافتی"
+        private const val NOTIFICATION_ID_BASE = 1000
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         Log.d("SmsReceiver", "🔔 onReceive called! Action: ${intent.action}")
+
+
+        // چک اگر از JobScheduler آمده باشد
+        val isJobCheck = intent.getBooleanExtra("job_scheduled_check", false)
+        if (isJobCheck) {
+            Log.d("SmsReceiver", "📅 This is a scheduled job check")
+            val checkTime = intent.getLongExtra("check_time", 0L)
+            Log.d("SmsReceiver", "⏰ Check time: ${android.text.format.DateFormat.format("HH:mm:ss", checkTime)}")
+        }
 
         // لاگ تمام extras برای دیدن sub_id واقعی
         intent.extras?.keySet()?.forEach { key ->
@@ -104,8 +119,11 @@ class SmsReceiver : BroadcastReceiver() {
                     saveToDatabase(context, smsList)
                     Log.d("SmsReceiver", "✅ Successfully saved ${smsList.size} SMS to database")
 
-                    // اطلاع‌رسانی به UI
-                    sendBroadcastToUpdateUI(context)
+                    // نمایش نوتیفیکیشن برای هر پیام
+                    smsList.forEach { sms ->
+                        // ============ تغییر مهم اینجا ============
+                        showNotificationAlways(context, sms)
+                    }
                 }
 
             } catch (e: Exception) {
@@ -158,8 +176,11 @@ class SmsReceiver : BroadcastReceiver() {
                     saveToDatabase(context, smsList)
                     Log.d("SmsReceiver", "✅ Successfully saved ${smsList.size} legacy SMS")
 
-                    // اطلاع‌رسانی به UI
-                    sendBroadcastToUpdateUI(context)
+                    // نمایش نوتیفیکیشن برای هر پیام
+                    smsList.forEach { sms ->
+                        // ============ تغییر مهم اینجا ============
+                        showNotificationAlways(context, sms)
+                    }
                 }
 
             } catch (e: Exception) {
@@ -224,22 +245,11 @@ class SmsReceiver : BroadcastReceiver() {
             database.smsDao().insertAll(smsList)
             Log.d("SmsReceiver", "💾 Database save successful")
 
-            // نمایش نوتیفیکیشن برای هر پیام
-            smsList.forEach { sms ->
-                showNotification(context, sms)
-            }
-
         } catch (e: Exception) {
             Log.e("SmsReceiver", "💥 Database save failed: ${e.message}", e)
         }
     }
 
-    private fun sendBroadcastToUpdateUI(context: Context) {
-        // ارسال broadcast برای رفرش UI
-        val updateIntent = Intent("com.example.mysms.SMS_RECEIVED")
-        context.sendBroadcast(updateIntent)
-        Log.d("SmsReceiver", "📡 Sent UI update broadcast")
-    }
     private fun processSentStatus(context: Context, intent: Intent) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -264,57 +274,153 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
     }
-    private fun showNotification(context: Context, sms: SmsEntity) {
-        try {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-            // ایجاد کانال برای اندروید 8+
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+    // ==================== تابع بهبودیافته نوتیفیکیشن ====================
+    private fun showNotificationAlways(context: Context, sms: SmsEntity) {
+        try {
+            // ============ تغییر مهم: استفاده از Foreground Service ============
+            // اگر سرویس foreground در حال اجرا باشد، از آن استفاده کن
+            // در غیر این صورت از روش قدیمی
+
+            // 1. سعی کن از Foreground Service استفاده کنی
+            try {
+                // راه‌اندازی سرویس foreground اگر در حال اجرا نیست
+                ForegroundSmsService.startService(context)
+
+                // منتظر باش سرویس شروع شود
+                Thread.sleep(500)
+
+                // نمایش نوتیفیکیشن از طریق سرویس
+                // Note: در اینجا نیاز به ارسال broadcast به سرویس داریم
+                // اما برای سادگی، هم از سرویس و هم از روش مستقیم استفاده می‌کنیم
+
+            } catch (e: Exception) {
+                Log.w("SmsReceiver", "⚠️ Could not use foreground service: ${e.message}")
+            }
+
+            // 2. همیشه نوتیفیکیشن را مستقیماً هم نمایش بده (برای اطمینان)
+            showNewMessageNotification(context, sms)
+
+            Log.d("SmsReceiver", "📢 Notification shown for ${sms.address}")
+
+        } catch (e: Exception) {
+            Log.e("SmsReceiver", "❌ Error showing notification: ${e.message}", e)
+        }
+    }
+
+    private fun showNewMessageNotification(context: Context, sms: SmsEntity) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                    as NotificationManager
+
+            // 1. ایجاد کانال نوتیفیکیشن (برای اندروید 8+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(
-                    "sms_channel",
-                    "پیام‌های جدید",
+                    CHANNEL_ID,
+                    CHANNEL_NAME,
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "پیام‌های دریافتی SMS"
+                    description = CHANNEL_DESCRIPTION
                     enableLights(true)
-                    lightColor = Color.RED
+                    lightColor = android.graphics.Color.RED
                     enableVibration(true)
                     vibrationPattern = longArrayOf(100, 200, 100, 200)
+                    lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                    setShowBadge(true)
                 }
                 notificationManager.createNotificationChannel(channel)
             }
 
-            // ایجاد intent برای باز کردن برنامه
-            val intent = Intent(context, MainActivity::class.java).apply {
+            // 2. ایجاد Intent برای بازکردن مستقیم چت
+            val openChatIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                putExtra("open_chat", sms.address)
+
+                // اضافه کردن اکسترا برای بازکردن چت با مخاطب خاص
+                putExtra("open_chat", true)
+                putExtra("contact_address", sms.address)
+                putExtra("contact_name", getContactName(context, sms.address))
+                putExtra("notification_clicked", true)
+                putExtra("message_id", sms.id)
+
+                // اضافه کردن action برای تمایز
+                action = "OPEN_CHAT_ACTION_${sms.address.hashCode()}"
+            }
+
+            // 3. ایجاد PendingIntent
+            val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
             }
 
             val pendingIntent = PendingIntent.getActivity(
                 context,
-                sms.address.hashCode(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                sms.address.hashCode(), // استفاده از hashCode برای ID منحصربه‌فرد
+                openChatIntent,
+                pendingIntentFlags
             )
 
-            // ساخت نوتیفیکیشن
-            val notification = NotificationCompat.Builder(context, "sms_channel")
+            // 4. دریافت نام مخاطب
+            val contactName = getContactName(context, sms.address)
+            val displayName = if (contactName != sms.address) contactName else sms.address
+
+            // 5. ایجاد BigTextStyle برای نمایش متن کامل
+            val bigTextStyle = NotificationCompat.BigTextStyle()
+                .bigText(sms.body)
+                .setBigContentTitle("پیام جدید از $displayName")
+                .setSummaryText("SMS")
+
+            // 6. ساخت نوتیفیکیشن
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle("پیام جدید")
-                .setContentText("از: ${sms.address}\n${sms.body.take(50)}${if (sms.body.length > 50) "..." else ""}")
+                .setContentText("از: $displayName")
+                .setStyle(bigTextStyle)
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
                 .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setGroup("sms_messages") // گروه‌بندی برای چندین پیام
+                .setGroupSummary(false)
                 .build()
 
-            // نمایش نوتیفیکیشن
-            notificationManager.notify(sms.address.hashCode(), notification)
-            Log.d("SmsReceiver", "📢 Notification shown for ${sms.address}")
+            // 7. نمایش نوتیفیکیشن با ID منحصربه‌فرد
+            val notificationId = NOTIFICATION_ID_BASE + (sms.address.hashCode().absoluteValue % 1000)
+            notificationManager.notify(notificationId, notification)
+
+            Log.d("SmsReceiver", "📢 Notification shown for $displayName (ID: $notificationId)")
 
         } catch (e: Exception) {
-            Log.e("SmsReceiver", "Error showing notification: ${e.message}")
+            Log.e("SmsReceiver", "❌ Error showing notification: ${e.message}", e)
+        }
+    }
+
+    // ==================== تابع کمکی برای دریافت نام مخاطب ====================
+    private fun getContactName(context: Context, phoneNumber: String): String {
+        return try {
+            val uri = android.net.Uri.withAppendedPath(
+                android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                android.net.Uri.encode(phoneNumber)
+            )
+            val projection = arrayOf(
+                android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME
+            )
+
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (nameIndex >= 0) {
+                        return cursor.getString(nameIndex) ?: phoneNumber
+                    }
+                }
+            }
+            phoneNumber
+        } catch (e: Exception) {
+            Log.e("SmsReceiver", "Error getting contact name: ${e.message}")
+            phoneNumber
         }
     }
 }
