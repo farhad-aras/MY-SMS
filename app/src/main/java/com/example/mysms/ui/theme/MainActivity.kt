@@ -202,6 +202,11 @@ fun MySMSApp() {
     var selectedContact by remember { mutableStateOf<String?>(null) }
     // ==================== پایان متغیرهای UI ====================
 
+    // ==================== مدیریت موقعیت اسکرول ====================
+    val scrollPositionPrefs = remember { context.getSharedPreferences("scroll_positions", Context.MODE_PRIVATE) }
+    var currentScrollPosition by remember { mutableIntStateOf(0) }
+    // ==================== پایان مدیریت اسکرول ====================
+
     // ==================== متغیرهای منو و تنظیمات ====================
     var showMenu by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
@@ -534,6 +539,16 @@ fun MySMSApp() {
                 Toast.makeText(context, "برای خروج دوباره Back را بزنید", Toast.LENGTH_SHORT).show()
             }
         }
+        // بازیابی موقعیت اسکرول هنگام بازگشت
+        LaunchedEffect(Unit) {
+            val savedPosition = scrollPositionPrefs.getInt("last_scroll_position", 0)
+            if (savedPosition > 0) {
+                delay(100) // تاخیر کوچک برای اطمینان از لود شدن
+                currentScrollPosition = savedPosition
+                // پاک کردن موقعیت ذخیره شده
+                scrollPositionPrefs.edit().remove("last_scroll_position").apply()
+            }
+        }
         Column(modifier = Modifier.fillMaxSize()) {
             // TopAppBar با منو
             CenterAlignedTopAppBar(
@@ -705,13 +720,28 @@ fun MySMSApp() {
             }
 
             // لیست مکالمات
+            // لیست مکالمات
+            val listState = rememberLazyListState(
+                initialFirstVisibleItemIndex = currentScrollPosition
+            )
+
+            // مشاهده تغییرات اسکرول برای ذخیره موقعیت فعلی
+            LaunchedEffect(listState.firstVisibleItemIndex) {
+                currentScrollPosition = listState.firstVisibleItemIndex
+            }
+
+            // لیست مکالمات
             ConversationListScreen(
                 sortedConversations = sortedConversations,
                 context = context,
                 pinnedList = pinnedList,
                 pinnedPrefs = pinnedPrefs,
-                listState = rememberLazyListState(),
-                onContactClick = { address -> selectedContact = address }
+                listState = listState,
+                onContactClick = { address ->
+                    scrollPositionPrefs.edit().putInt("last_scroll_position", currentScrollPosition).apply()
+                    selectedContact = address
+                },
+                scrollToPosition = currentScrollPosition
             )
         }
     }

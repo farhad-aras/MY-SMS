@@ -4,8 +4,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.delay
 
 @Composable
 fun ConversationListScreen(
@@ -14,8 +18,19 @@ fun ConversationListScreen(
     pinnedList: MutableList<String>,
     pinnedPrefs: android.content.SharedPreferences,
     listState: LazyListState,
-    onContactClick: (String) -> Unit
+    onContactClick: (String) -> Unit,
+    // پارامتر جدید: موقعیت اسکرول که باید بازیابی شود
+    scrollToPosition: Int = 0
 ) {
+    // مشاهده تغییرات موقعیت اسکرول
+    LaunchedEffect(scrollToPosition) {
+        if (scrollToPosition > 0) {
+            // تاخیر برای اطمینان از لود شدن آیتم‌ها
+            delay(50)
+            listState.scrollToItem(scrollToPosition)
+        }
+    }
+
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize()
