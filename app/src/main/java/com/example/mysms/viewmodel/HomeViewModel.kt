@@ -23,6 +23,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val smsDao = AppDatabase.getDatabase(application).smsDao()
     private val repository = SmsRepository(application, smsDao)
 
+    // SharedPreferences برای ذخیره نام تب‌های سیم‌کارت
+    private val tabPrefs = getApplication<Application>()
+        .getSharedPreferences("tab_names_prefs", Context.MODE_PRIVATE)
+
     // لیست تمام پیام‌ها از دیتابیس (برای صفحه چت با یک مخاطب)
     private val _smsList = MutableStateFlow<List<SmsEntity>>(emptyList())
     val smsList = _smsList.asStateFlow()
@@ -44,6 +48,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _sim2Id = MutableStateFlow<Int?>(null)
     val sim2Id = _sim2Id.asStateFlow()
+
+    // نام‌های سفارشی تب‌های سیم‌کارت
+    private val _sim1TabName = MutableStateFlow("سیم ۱")
+    val sim1TabName = _sim1TabName.asStateFlow()
+
+    private val _sim2TabName = MutableStateFlow("سیم ۲")
+    val sim2TabName = _sim2TabName.asStateFlow()
 
     // پیام‌های موقت (برای ارسال فوری)
     private val _tempMessages = MutableStateFlow<List<SmsEntity>>(emptyList())
@@ -67,6 +78,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             // 2. بازیابی پیش‌نویس‌ها
             restoreDrafts()
+
+            // 3. بارگذاری نام‌های ذخیره شده تب‌ها
+            loadTabNames()
 
             // 3. مشاهده دیتابیس (همه پیام‌ها و مکالمات)
             viewModelScope.launch {
@@ -339,4 +353,79 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // ✅ تابع جدید: دریافت پیام‌های یک مخاطب خاص
     // ---------------------------
     fun getMessagesByAddressFlow(address: String) = repository.getSmsByAddressFlow(address)
+
+    // ==================== توابع مدیریت نام تب‌ها ====================
+
+    /**
+     * بارگذاری نام‌های ذخیره شده تب‌ها از SharedPreferences
+     */
+    private fun loadTabNames() {
+        val sim1Name = tabPrefs.getString("sim1_tab_name", "سیم ۱") ?: "سیم ۱"
+        val sim2Name = tabPrefs.getString("sim2_tab_name", "سیم ۲") ?: "سیم ۲"
+
+        _sim1TabName.value = sim1Name
+        _sim2TabName.value = sim2Name
+        Log.d("HomeViewModel", "📝 Loaded tab names: SIM1='$sim1Name', SIM2='$sim2Name'")
+    }
+
+    /**
+     * دریافت نام نمایشی برای سیم‌کارت با توجه به تب انتخاب شده
+     * @param tabIndex 0 برای SIM1, 1 برای SIM2
+     */
+    fun getSimDisplayName(tabIndex: Int): String {
+        return when (tabIndex) {
+            0 -> sim1TabName.value
+            1 -> sim2TabName.value
+            else -> "سیم‌کارت"
+        }
+    }
+
+    /**
+     * به‌روزرسانی نام تب سیم‌کارت
+     * @param tabIndex 0 برای SIM1, 1 برای SIM2
+     * @param newName نام جدید (اگر خالی باشد، نام پیش‌فرض ذخیره می‌شود)
+     */
+    fun updateSimTabName(tabIndex: Int, newName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val finalName = if (newName.isBlank()) {
+                    when (tabIndex) {
+                        0 -> "سیم ۱"
+                        1 -> "سیم ۲"
+                        else -> "سیم‌کارت"
+                    }
+                } else {
+                    newName
+                }
+
+                // ذخیره در SharedPreferences
+                when (tabIndex) {
+                    0 -> {
+                        tabPrefs.edit().putString("sim1_tab_name", finalName).apply()
+                        _sim1TabName.value = finalName
+                    }
+                    1 -> {
+                        tabPrefs.edit().putString("sim2_tab_name", finalName).apply()
+                        _sim2TabName.value = finalName
+                    }
+                }
+
+                Log.d("HomeViewModel", "💾 Updated tab $tabIndex name to: '$finalName'")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error updating tab name: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * بازیابی نام فعلی تب
+     * @param tabIndex 0 برای SIM1, 1 برای SIM2
+     */
+    fun getCurrentTabName(tabIndex: Int): String {
+        return when (tabIndex) {
+            0 -> sim1TabName.value
+            1 -> sim2TabName.value
+            else -> "سیم‌کارت"
+        }
+    }
 }

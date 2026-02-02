@@ -1,5 +1,12 @@
 package com.example.mysms.ui.theme
 
+import com.example.mysms.ui.theme.SettingsScreen
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import com.example.mysms.ui.theme.ForegroundSmsService
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -19,7 +26,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,6 +52,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "🟢 Activity created")
+
+        // ============  بررسی اپ پیش‌فرض ============
+
 
         // ۱. درخواست نقش اپ پیش‌فرض SMS
         DefaultSmsDisabler.disableDefaultSmsNotifications(this)
@@ -160,6 +173,10 @@ fun MySMSApp() {
     val sim1Id by vm.sim1Id.collectAsState()
     val sim2Id by vm.sim2Id.collectAsState()
 
+    // نام‌های سفارشی تب‌ها
+    val sim1TabName by vm.sim1TabName.collectAsState()
+    val sim2TabName by vm.sim2TabName.collectAsState()
+
     // پیام‌های موقت و وضعیت ارسال
     val tempMessages by vm.tempMessages.collectAsState()
     val sendingState by vm.sendingState.collectAsState()
@@ -168,6 +185,11 @@ fun MySMSApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedContact by remember { mutableStateOf<String?>(null) }
     // ==================== پایان متغیرهای UI ====================
+
+    // ==================== متغیرهای منو و تنظیمات ====================
+    var showMenu by remember { mutableStateOf(false) }
+    var showSettingsScreen by remember { mutableStateOf(false) }
+    // ==================== پایان متغیرهای منو ====================
 
     // ==================== مدیریت بازکردن از نوتیفیکیشن ====================
     val notificationPrefs = remember { context.getSharedPreferences("notification_prefs", Context.MODE_PRIVATE) }
@@ -442,10 +464,21 @@ fun MySMSApp() {
             )
         }
     }
+
+
+    // صفحه 2.5: تنظیمات نام تب‌ها
+    if (showSettingsScreen) {
+        SettingsScreen(
+            onBack = { showSettingsScreen = false },
+            viewModel = vm,
+            currentTab = selectedTab
+        )
+    }
     // صفحه 3: لیست اصلی
-    else {
+    else if (selectedContact == null && !showSettingsScreen) {
         Column(modifier = Modifier.fillMaxSize()) {
             // === این بخش را اضافه کنید ===
+            // TopAppBar با منو
             CenterAlignedTopAppBar(
                 title = {
                     Text(
@@ -456,11 +489,62 @@ fun MySMSApp() {
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary
-                )
+                ),
+                actions = {
+                    // آیکون منو
+                    IconButton(
+                        onClick = { showMenu = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "منو",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+
+                    // منوی dropdown
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        // گزینه تغییر نام تب‌ها
+                        DropdownMenuItem(
+                            text = { Text("تغییر نام تب‌های سیم‌کارت") },
+                            onClick = {
+                                showMenu = false
+                                showSettingsScreen = true
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+
+                        Divider()
+
+                        // گزینه تنظیمات
+                        DropdownMenuItem(
+                            text = { Text("تنظیمات") },
+                            onClick = {
+                                showMenu = false
+                                // TODO: باز کردن صفحه تنظیمات اصلی
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                    }
+                }
             )
             // === پایان بخش اضافه شده ===
             // تب‌های سیم‌کارت
             TabRow(selectedTabIndex = selectedTab) {
+
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
@@ -468,7 +552,8 @@ fun MySMSApp() {
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("سیم‌کارت ۱")
+                            // استفاده از نام سفارشی
+                            Text(vm.sim1TabName.value)
                             if (unreadCounts.first > 0) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Badge {
@@ -485,7 +570,8 @@ fun MySMSApp() {
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("سیم‌کارت ۲")
+                            // استفاده از نام سفارشی
+                            Text(vm.sim2TabName.value)
                             if (unreadCounts.second > 0) {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Badge {
@@ -590,6 +676,9 @@ fun MySMSApp() {
             )
         }
     }
+
+
+
 }
 
 // داده‌های مدل

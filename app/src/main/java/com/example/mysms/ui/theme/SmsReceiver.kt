@@ -1,5 +1,7 @@
 package com.example.mysms.ui.theme
 
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.RequiresApi
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -33,6 +35,7 @@ class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Log.d("SmsReceiver", "🔔 onReceive called! Action: ${intent.action}")
+
 
 
         // چک اگر از JobScheduler آمده باشد
