@@ -1,5 +1,6 @@
 package com.example.mysms.ui.theme
 
+import androidx.activity.compose.BackHandler
 import com.example.mysms.ui.theme.SettingsScreen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Edit
@@ -48,6 +49,8 @@ import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
+
+    private var backPressTime: Long = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -145,6 +148,17 @@ class MainActivity : ComponentActivity() {
             Log.e("MainActivity", "Error stopping foreground service: ${e.message}")
         }
     }
+
+    // ==================== کنترل دکمه فیزیکی Back ====================
+
+    override fun onBackPressed() {
+        // اجازه دهید BackHandler در Composable کنترل کند
+        // اگر BackHandler نبود، super فراخوانی می‌شود
+        super.onBackPressed()
+    }
+
+    // ==================== پایان کنترل Back ====================
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,6 +166,8 @@ class MainActivity : ComponentActivity() {
 fun MySMSApp() {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+
 
     val application = context.applicationContext as android.app.Application
     val vm: HomeViewModel = viewModel(
@@ -201,6 +217,25 @@ fun MySMSApp() {
     val chatAddressToOpen = remember {
         mutableStateOf(notificationPrefs.getString("chat_address", null))
     }
+
+    // ==================== ذخیره وضعیت UI برای کنترل Back ====================
+    val uiStatePrefs = remember { context.getSharedPreferences("ui_state", Context.MODE_PRIVATE) }
+
+    // ذخیره وضعیت چت
+    LaunchedEffect(selectedContact) {
+        uiStatePrefs.edit().putBoolean("is_in_chat", selectedContact != null).apply()
+    }
+
+    // ذخیره وضعیت تنظیمات
+    LaunchedEffect(showSettingsScreen) {
+        uiStatePrefs.edit().putBoolean("is_in_settings", showSettingsScreen).apply()
+    }
+
+    // ذخیره وضعیت بارگذاری
+    LaunchedEffect(isFirstLoadDone) {
+        uiStatePrefs.edit().putBoolean("is_loading", !isFirstLoadDone).apply()
+    }
+    // ==================== پایان ذخیره وضعیت ====================
 
     // پرش مستقیم به چت اگر از نوتیفیکیشن آمده باشد
     LaunchedEffect(shouldOpenChat.value, chatAddressToOpen.value, isFirstLoadDone) {
@@ -337,6 +372,7 @@ fun MySMSApp() {
     }
 
     // صفحه 1: بارگذاری اولیه (اگر قبلا انجام نشده)
+    // صفحه 1: بارگذاری اولیه
     if (!isFirstLoadDone) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(
@@ -414,7 +450,14 @@ fun MySMSApp() {
         }
     }
     // صفحه 2: چت داخلی
+    // صفحه 2: چت داخلی
     else if (selectedContact != null) {
+        // کنترل دکمه Back برای صفحه چت
+        BackHandler {
+            selectedContact = null
+        }
+
+
         val contactAddress = selectedContact!!
         LaunchedEffect(contactAddress) {
             // علامت‌گذاری پیام‌های این مخاطب به عنوان خوانده شده
@@ -440,13 +483,11 @@ fun MySMSApp() {
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // استفاده از ChatScreen از فایل جداگانه
             ChatScreen(
                 address = contactAddress,
                 messages = contactMessages,
                 onBack = { selectedContact = null },
                 onSendClick = { message ->
-                    // ارسال با سیم‌کارت انتخاب شده در تب
                     val defaultSimId = when(selectedTab) {
                         0 -> sim1Id ?: -1
                         1 -> sim2Id ?: -1
@@ -467,17 +508,33 @@ fun MySMSApp() {
 
 
     // صفحه 2.5: تنظیمات نام تب‌ها
-    if (showSettingsScreen) {
+    else if (showSettingsScreen) {
+        // کنترل دکمه Back برای صفحه تنظیمات - باید در ابتدای بلوک باشد
+        BackHandler {
+            showSettingsScreen = false
+        }
         SettingsScreen(
             onBack = { showSettingsScreen = false },
             viewModel = vm,
             currentTab = selectedTab
         )
     }
+
     // صفحه 3: لیست اصلی
-    else if (selectedContact == null && !showSettingsScreen) {
+    else {
+        // کنترل دکمه Back برای صفحه لیست اصلی - باید در ابتدای بلوک باشد
+        var backPressTime by remember { mutableLongStateOf(0L) }
+
+        BackHandler {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - backPressTime < 2000) {
+                (context as? android.app.Activity)?.finish()
+            } else {
+                backPressTime = currentTime
+                Toast.makeText(context, "برای خروج دوباره Back را بزنید", Toast.LENGTH_SHORT).show()
+            }
+        }
         Column(modifier = Modifier.fillMaxSize()) {
-            // === این بخش را اضافه کنید ===
             // TopAppBar با منو
             CenterAlignedTopAppBar(
                 title = {
@@ -491,7 +548,6 @@ fun MySMSApp() {
                     containerColor = MaterialTheme.colorScheme.primary
                 ),
                 actions = {
-                    // آیکون منو
                     IconButton(
                         onClick = { showMenu = true }
                     ) {
@@ -502,12 +558,10 @@ fun MySMSApp() {
                         )
                     }
 
-                    // منوی dropdown
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        // گزینه تغییر نام تب‌ها
                         DropdownMenuItem(
                             text = { Text("تغییر نام تب‌های سیم‌کارت") },
                             onClick = {
@@ -524,12 +578,10 @@ fun MySMSApp() {
 
                         Divider()
 
-                        // گزینه تنظیمات
                         DropdownMenuItem(
                             text = { Text("تنظیمات") },
                             onClick = {
                                 showMenu = false
-                                // TODO: باز کردن صفحه تنظیمات اصلی
                             },
                             leadingIcon = {
                                 Icon(
@@ -541,10 +593,9 @@ fun MySMSApp() {
                     }
                 }
             )
-            // === پایان بخش اضافه شده ===
+
             // تب‌های سیم‌کارت
             TabRow(selectedTabIndex = selectedTab) {
-
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
@@ -552,7 +603,6 @@ fun MySMSApp() {
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // استفاده از نام سفارشی
                             Text(sim1TabName)
                             if (unreadCounts.first > 0) {
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -570,7 +620,6 @@ fun MySMSApp() {
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // استفاده از نام سفارشی
                             Text(sim2TabName)
                             if (unreadCounts.second > 0) {
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -595,7 +644,6 @@ fun MySMSApp() {
             }
 
             // دکمه Refresh
-// جایگزین کردن دکمه refresh قبلی
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -619,21 +667,14 @@ fun MySMSApp() {
                 }
 
                 Row {
-                    // دکمه mark all as read
                     if (unreadMessages > 0) {
                         TextButton(
                             onClick = {
                                 coroutineScope.launch {
-                                    // اینجا باید پیام‌های خوانده نشده را پیدا کنیم
                                     val unreadMessages = smsList.filter { !it.read && it.type == 1 }
                                     unreadMessages.forEach { sms ->
                                         vm.markMessageAsRead(sms.id)
                                     }
-
-                                    // یا اگر تابع batch در ViewModel دارید:
-                                    // vm.markAllMessagesAsRead()
-
-                                    // تویست در main thread
                                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                         Toast.makeText(context, "همه پیام‌ها خوانده شدند", Toast.LENGTH_SHORT).show()
                                     }
@@ -644,12 +685,10 @@ fun MySMSApp() {
                         }
                     }
 
-                    // دکمه refresh
                     IconButton(
                         onClick = {
                             coroutineScope.launch {
                                 vm.startInitialSync()
-                                // تویست باید در main thread باشد
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                     Toast.makeText(context, "در حال بروزرسانی...", Toast.LENGTH_SHORT).show()
                                 }
@@ -665,7 +704,7 @@ fun MySMSApp() {
                 }
             }
 
-            // استفاده از ConversationListScreen
+            // لیست مکالمات
             ConversationListScreen(
                 sortedConversations = sortedConversations,
                 context = context,
