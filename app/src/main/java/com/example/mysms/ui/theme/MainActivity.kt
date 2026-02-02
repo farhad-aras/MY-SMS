@@ -43,6 +43,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "🟢 Activity created")
 
+        // ۱. درخواست نقش اپ پیش‌فرض SMS
+        DefaultSmsDisabler.disableDefaultSmsNotifications(this)
+
+        // ۲. مخفی کردن نوتیفیکیشن‌های پیش‌فرض
+        DefaultSmsDisabler.hideDefaultNotifications(this)
+
         // بررسی Intent برای بازشدن از نوتیفیکیشن
         handleNotificationIntent(intent)
 

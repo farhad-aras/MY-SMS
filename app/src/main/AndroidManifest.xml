@@ -10,7 +10,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-
     <!-- برای اندروید ۹ و بالاتر -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
@@ -84,6 +83,22 @@
             android:foregroundServiceType="dataSync|shortService"
             android:stopWithTask="false" />
 
+        <!-- سرویس JobScheduler -->
+        <service
+            android:name=".ui.theme.SmsJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+
+        <!-- سرویس دریافت SMS (جدید) -->
+        <service
+            android:name=".ui.theme.SmsReceiverService"
+            android:exported="true"
+            android:permission="android.permission.BIND_CARRIER_SERVICES">
+            <intent-filter android:priority="1000">
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </service>
+
         <!-- سرویس گوش‌دهنده به نوتیفیکیشن‌ها (اختیاری) -->
         <service
             android:name=".ui.theme.NotificationListener"
@@ -94,10 +109,6 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
-        <service
-            android:name=".ui.theme.SmsJobService"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="false" />
 
     </application>
 
