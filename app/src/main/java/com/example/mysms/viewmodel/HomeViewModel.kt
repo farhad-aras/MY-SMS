@@ -27,6 +27,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val tabPrefs = getApplication<Application>()
         .getSharedPreferences("tab_names_prefs", Context.MODE_PRIVATE)
 
+    // ==================== SharedPreferences برای وضعیت expand/collapse ====================
+    private val dateExpansionPrefs = getApplication<Application>()
+        .getSharedPreferences("date_expansion_state", Context.MODE_PRIVATE)
+
+
     // لیست تمام پیام‌ها از دیتابیس (برای صفحه چت با یک مخاطب)
     private val _smsList = MutableStateFlow<List<SmsEntity>>(emptyList())
     val smsList = _smsList.asStateFlow()
@@ -64,6 +69,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _sendingState = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val sendingState = _sendingState.asStateFlow()
 
+    // ====================  State برای وضعیت expand/collapse تاریخ‌ها ====================
+    private val _expandedDates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val expandedDates = _expandedDates.asStateFlow()
+
+
     // پیش‌نویس‌ها
     val drafts = mutableStateMapOf<String, String>()
     private val prefs =
@@ -82,6 +92,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             // 3. بارگذاری نام‌های ذخیره شده تب‌ها
             loadTabNames()
 
+            // ==================== بارگذاری وضعیت expand/collapse تاریخ‌ها ====================
+            // 4. بارگذاری وضعیت expand/collapse تاریخ‌ها
+            loadDateExpansionState()
+
+
             // 3. مشاهده دیتابیس (همه پیام‌ها و مکالمات)
             viewModelScope.launch {
                 // مشاهده تمام پیام‌ها (برای صفحه چت)
@@ -97,6 +112,119 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _conversations.value = emptyList()
         }
     }
+
+    // ==================== توابع مدیریت وضعیت expand/collapse تاریخ‌ها ====================
+
+    /**
+     * بارگذاری وضعیت expand/collapse تاریخ‌ها از SharedPreferences
+     */
+    private fun loadDateExpansionState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val allEntries = dateExpansionPrefs.all
+                val expansionMap = mutableMapOf<String, Boolean>()
+
+                allEntries.forEach { (dateKey, isExpanded) ->
+                    if (isExpanded is Boolean) {
+                        expansionMap[dateKey] = isExpanded
+                    }
+                }
+
+                _expandedDates.value = expansionMap
+                Log.d("HomeViewModel", "📅 Loaded date expansion state: ${expansionMap.size} dates")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error loading date expansion state: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * بررسی آیا یک تاریخ expand شده است یا نه
+     * @param dateKey تاریخ به فرمت شمسی (مثلاً 1403/10/15)
+     */
+    fun isDateExpanded(dateKey: String): Boolean {
+        return _expandedDates.value[dateKey] ?: false
+    }
+
+    /**
+     * تغییر وضعیت expand/collapse یک تاریخ
+     * @param dateKey تاریخ به فرمت شمسی
+     * @param isExpanded وضعیت جدید
+     */
+    fun toggleDateExpansion(dateKey: String, isExpanded: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // آپدیت state
+                val newMap = _expandedDates.value.toMutableMap()
+                newMap[dateKey] = isExpanded
+                _expandedDates.value = newMap
+
+                // ذخیره در SharedPreferences
+                dateExpansionPrefs.edit().putBoolean(dateKey, isExpanded).apply()
+
+                Log.d("HomeViewModel", "💾 Date expansion state saved: $dateKey = $isExpanded")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error saving date expansion state: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * تنظیم وضعیت پیش‌فرض برای لیست تاریخ‌ها
+     * پیش‌فرض: همه بسته، فقط آخرین تاریخ باز
+     * @param dateKeys لیست تمام تاریخ‌ها به صورت مرتب شده
+     */
+    fun setDefaultExpansionState(dateKeys: List<String>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (dateKeys.isEmpty()) return@launch
+
+                // ایجاد مپ جدید
+                val newMap = mutableMapOf<String, Boolean>()
+
+                // همه تاریخ‌ها رو بسته می‌کنیم
+                dateKeys.forEach { dateKey ->
+                    newMap[dateKey] = false
+                }
+
+                // فقط آخرین تاریخ رو باز می‌کنیم (اگر قبلاً ذخیره نشده باشد)
+                val lastDateKey = dateKeys.lastOrNull()
+                if (lastDateKey != null) {
+                    // اگر قبلاً وضعیتی برای این تاریخ ذخیره شده، تغییر نمی‌دهیم
+                    if (!_expandedDates.value.containsKey(lastDateKey)) {
+                        newMap[lastDateKey] = true
+                        dateExpansionPrefs.edit().putBoolean(lastDateKey, true).apply()
+                    } else {
+                        // از وضعیت ذخیره شده استفاده می‌کنیم
+                        newMap[lastDateKey] = _expandedDates.value[lastDateKey] ?: false
+                    }
+                }
+
+                // آپدیت state
+                _expandedDates.value = newMap
+
+                Log.d("HomeViewModel", "📅 Default expansion state set for ${dateKeys.size} dates")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error setting default expansion state: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * پاک کردن همه وضعیت‌های expand/collapse
+     */
+    fun clearAllExpansionStates() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                dateExpansionPrefs.edit().clear().apply()
+                _expandedDates.value = emptyMap()
+                Log.d("HomeViewModel", "🧹 All date expansion states cleared")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error clearing expansion states: ${e.message}", e)
+            }
+        }
+    }
+
 
     // ---------------------------
     // مشاهده flow تمام پیام‌ها

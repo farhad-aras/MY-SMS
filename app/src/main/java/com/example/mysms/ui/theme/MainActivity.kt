@@ -488,10 +488,9 @@ fun MySMSApp() {
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            ChatScreen(
-                address = contactAddress,
+            InternalChatScreen(
                 messages = contactMessages,
-                onBack = { selectedContact = null },
+                context = context,
                 onSendClick = { message ->
                     val defaultSimId = when(selectedTab) {
                         0 -> sim1Id ?: -1
@@ -506,7 +505,9 @@ fun MySMSApp() {
                 onDraftChange = { newText ->
                     vm.updateDraft(contactAddress, newText)
                 },
-                isSending = isSendingForThisContact
+                address = contactAddress,
+                onBack = { selectedContact = null }
+
             )
         }
     }

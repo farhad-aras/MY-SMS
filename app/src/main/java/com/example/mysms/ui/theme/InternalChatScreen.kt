@@ -1,5 +1,8 @@
 package com.example.mysms.ui.theme
 
+import com.example.mysms.ui.theme.getContactNameState
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mysms.viewmodel.HomeViewModel
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.background
@@ -18,11 +21,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mysms.data.SmsEntity
 import android.content.Context
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -31,8 +35,11 @@ fun InternalChatScreen(
     context: Context,
     onSendClick: (String) -> Unit,
     draftMessage: String,
-    onDraftChange: (String) -> Unit
+    onDraftChange: (String) -> Unit,
+    address: String,
+    onBack: () -> Unit
 ) {
+    val vm: HomeViewModel = viewModel()
     val sortedMessages = remember(messages) { messages.sortedBy { it.date } }
 
     val groupedMessages = remember(sortedMessages) {
@@ -55,40 +62,74 @@ fun InternalChatScreen(
 
     val listState = rememberLazyListState()
 
-    val expandedState = remember { mutableStateMapOf<String, Boolean>() }
+    // *** اضافه کردن این بلوک:***
+    // مشاهده وضعیت expand/collapse از ViewModel
+    val expandedDates by vm.expandedDates.collectAsState()
 
+    // تنظیم وضعیت پیش‌فرض هنگام اولین بار
     LaunchedEffect(sortedKeys) {
         if (sortedKeys.isNotEmpty()) {
-            val todayJalali = JalaliDateUtil.getDateOnly(System.currentTimeMillis())
-            val closestDate = sortedKeys.maxByOrNull { dateStr ->
-                try {
-                    val parts1 = dateStr.split("/").map { it.toInt() }
-                    val parts2 = todayJalali.split("/").map { it.toInt() }
-                    if (parts1.size == 3 && parts2.size == 3) {
-                        val diff = (parts2[0] - parts1[0]) * 365 +
-                                (parts2[1] - parts1[1]) * 30 +
-                                (parts2[2] - parts1[2])
-                        -kotlin.math.abs(diff)
-                    } else Int.MIN_VALUE
-                } catch (e: Exception) {
-                    Int.MIN_VALUE
-                }
+            // فقط اگر برای این تاریخ‌ها وضعیتی تنظیم نشده، پیش‌فرض را اعمال کن
+            val hasAnyState = sortedKeys.any { vm.isDateExpanded(it) }
+            if (!hasAnyState) {
+                vm.setDefaultExpansionState(sortedKeys)
             }
-            if (closestDate != null) {
-                expandedState[closestDate] = true
-            }
-        }
 
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            // اسکرول به آخرین پیام
+            if (messages.isNotEmpty()) {
+                listState.animateScrollToItem(messages.size - 1)
+            }
         }
     }
+
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
+        Surface(
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // *** اضافه کردن دکمه Back:***
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack, // استفاده از ArrowBack
+                        contentDescription = "بازگشت",
+                        tint = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    val contactName by getContactNameState(context, address)
+                    Text(
+                        text = contactName,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                    Text(
+                        text = address,
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -98,27 +139,28 @@ fun InternalChatScreen(
             contentPadding = PaddingValues(bottom = 8.dp, top = 8.dp)
         ) {
             sortedKeys.forEach { dateKey ->
-                val isExpanded = expandedState[dateKey] ?: false
+                val isExpanded = expandedDates[dateKey] ?: false
                 val messagesOfDay = groupedMessages[dateKey] ?: emptyList()
 
-                stickyHeader {
+                item(key = "date_$dateKey") {
+                    // UI جدید برای تاریخ مثل تلگرام
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 6.dp),
+                            .padding(vertical = 6.dp, horizontal = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            shadowElevation = 4.dp,
+                            color = Color(0x80000000), // سیاه با transparency 50%
                             modifier = Modifier
-                                .clickable { expandedState[dateKey] = !isExpanded }
-                                .padding(horizontal = 20.dp)
+                                .clickable {
+                                    vm.toggleDateExpansion(dateKey, !isExpanded)
+                                }
                         ) {
                             Row(
                                 modifier = Modifier
-                                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {
@@ -128,27 +170,32 @@ fun InternalChatScreen(
                                     else
                                         Icons.Default.KeyboardArrowDown,
                                     contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = dateKey,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp,
-                                    letterSpacing = 0.5.sp
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 14.sp,
+                                    letterSpacing = 0.3.sp
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Badge(
-                                    containerColor = Color.White.copy(alpha = 0.3f),
-                                    contentColor = Color.White
+                                Spacer(modifier = Modifier.width(8.dp))
+                                // Badge با transparency
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color.White.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(24.dp)
                                 ) {
-                                    Text(
-                                        text = "${messagesOfDay.size}",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "${messagesOfDay.size}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
                                 }
                             }
                         }
