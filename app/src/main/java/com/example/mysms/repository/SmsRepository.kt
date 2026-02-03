@@ -85,6 +85,11 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
 
             Log.d("SmsSync", "✅ READ_SMS permission granted, starting sync...")
 
+            // *** تغییر جدید: ابتدا وضعیت read فعلی را از دیتابیس ذخیره کن
+            val existingReadStatus = withContext(Dispatchers.IO) {
+                smsDao.getAllSms().associate { it.id to it.read }
+            }
+
             val cursor = context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
                 null, null, null, null
@@ -120,7 +125,13 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
                         val date = if (dateIdx != -1) it.getLong(dateIdx) else 0L
                         val type = if (typeIdx != -1) it.getInt(typeIdx) else 1
                         val subId = if (subIdIdx != -1) it.getInt(subIdIdx) else -1
-                        val isRead = if (readIdx != -1) it.getInt(readIdx) == 1 else true
+
+                        // *** تغییر جدید: وضعیت read از دیتابیس موجود اولویت دارد
+                        val isRead = if (existingReadStatus.containsKey(id)) {
+                            existingReadStatus[id] ?: true
+                        } else {
+                            if (readIdx != -1) it.getInt(readIdx) == 1 else true
+                        }
 
                         list.add(SmsEntity(id, address, body, date, type, subId, isRead))
                     } catch (e: Exception) {

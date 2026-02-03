@@ -1,5 +1,8 @@
 package com.example.mysms.ui.theme
 
+import kotlinx.coroutines.flow.collect
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.activity.compose.BackHandler
 import com.example.mysms.ui.theme.SettingsScreen
 import androidx.compose.material.icons.filled.MoreVert
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -200,17 +204,29 @@ fun MySMSApp() {
     // ==================== متغیرهای اصلی UI ====================
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedContact by remember { mutableStateOf<String?>(null) }
-    // ==================== پایان متغیرهای UI ====================
+    // ==================== ====================
+
+    // ==================== key برای فورس ریفرش لیست ====================
+    var listRefreshKey by remember { mutableIntStateOf(0) }
+    // =======================================
+
+    // ====================  حالت نمایش نخوانده‌ها ====================
+    var showUnreadFirst by remember { mutableStateOf(false) }
+    // ==================== ====================
+
+
 
     // ==================== مدیریت موقعیت اسکرول ====================
     val scrollPositionPrefs = remember { context.getSharedPreferences("scroll_positions", Context.MODE_PRIVATE) }
     var currentScrollPosition by remember { mutableIntStateOf(0) }
-    // ==================== پایان مدیریت اسکرول ====================
+    // ========================================
+
+    val listState = rememberLazyListState()
 
     // ==================== متغیرهای منو و تنظیمات ====================
     var showMenu by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
-    // ==================== پایان متغیرهای منو ====================
+    // ====================  ====================
 
     // ==================== مدیریت بازکردن از نوتیفیکیشن ====================
     val notificationPrefs = remember { context.getSharedPreferences("notification_prefs", Context.MODE_PRIVATE) }
@@ -230,6 +246,7 @@ fun MySMSApp() {
     LaunchedEffect(selectedContact) {
         uiStatePrefs.edit().putBoolean("is_in_chat", selectedContact != null).apply()
     }
+
 
     // ذخیره وضعیت تنظیمات
     LaunchedEffect(showSettingsScreen) {
@@ -324,7 +341,7 @@ fun MySMSApp() {
     }
 
     // محاسبه مکالمات - منطق از کد قدیمی
-    val sortedConversations by remember(smsList, pinnedList.size, vm.drafts, selectedTab) {
+    val sortedConversations by remember(smsList, pinnedList.size, vm.drafts, selectedTab, showUnreadFirst, listRefreshKey) {
         derivedStateOf {
             val allConversations = smsList.groupBy { it.address }.map { entry ->
                 val address = entry.key
@@ -356,10 +373,19 @@ fun MySMSApp() {
                 else -> allConversations
             }
 
-            filtered.sortedWith(
-                compareByDescending<ConversationData> { it.isPinned }
-                    .thenByDescending { it.originalDate }
-            )
+            // *** تغییر جدید: مرتب‌سازی بر اساس نخوانده‌ها اگر فعال باشد
+            if (showUnreadFirst) {
+                filtered.sortedWith(
+                    compareByDescending<ConversationData> { it.isPinned }
+                        .thenByDescending { it.unreadCount > 0 }
+                        .thenByDescending { it.originalDate }
+                )
+            } else {
+                filtered.sortedWith(
+                    compareByDescending<ConversationData> { it.isPinned }
+                        .thenByDescending { it.originalDate }
+                )
+            }
         }
     }
 
@@ -487,6 +513,9 @@ fun MySMSApp() {
             mutableStateOf(vm.drafts[contactAddress] ?: "")
         }
 
+
+
+
         Column(modifier = Modifier.fillMaxSize()) {
             InternalChatScreen(
                 messages = contactMessages,
@@ -550,6 +579,9 @@ fun MySMSApp() {
                 scrollPositionPrefs.edit().remove("last_scroll_position").apply()
             }
         }
+
+
+
         Column(modifier = Modifier.fillMaxSize()) {
             // TopAppBar با منو
             CenterAlignedTopAppBar(
@@ -683,6 +715,32 @@ fun MySMSApp() {
                 }
 
                 Row {
+                    // دکمه نمایش نخوانده‌ها
+                    IconButton(
+                        onClick = {
+                            showUnreadFirst = !showUnreadFirst
+                            // *** تغییر: افزایش عددی
+                            listRefreshKey++
+                            // پاک کردن موقعیت اسکرول
+                            scrollPositionPrefs.edit().remove("last_scroll_position").apply()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (showUnreadFirst)
+                                Icons.Default.CheckCircle
+                            else
+                                Icons.Default.CheckCircle,
+                            contentDescription = if (showUnreadFirst)
+                                "نمایش همه"
+                            else
+                                "نمایش نخوانده‌ها اول",
+                            tint = if (showUnreadFirst)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
                     if (unreadMessages > 0) {
                         TextButton(
                             onClick = {
@@ -721,7 +779,6 @@ fun MySMSApp() {
             }
 
             // لیست مکالمات
-            // لیست مکالمات
             val listState = rememberLazyListState(
                 initialFirstVisibleItemIndex = currentScrollPosition
             )
@@ -742,7 +799,9 @@ fun MySMSApp() {
                     scrollPositionPrefs.edit().putInt("last_scroll_position", currentScrollPosition).apply()
                     selectedContact = address
                 },
-                scrollToPosition = currentScrollPosition
+                scrollToPosition = currentScrollPosition,
+                // *** تغییر: پاس دادن خود key
+                refreshKey = listRefreshKey
             )
         }
     }

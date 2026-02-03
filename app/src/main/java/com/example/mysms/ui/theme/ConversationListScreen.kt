@@ -19,13 +19,20 @@ fun ConversationListScreen(
     pinnedPrefs: android.content.SharedPreferences,
     listState: LazyListState,
     onContactClick: (String) -> Unit,
-    // پارامتر جدید: موقعیت اسکرول که باید بازیابی شود
-    scrollToPosition: Int = 0
+    scrollToPosition: Int = 0,
+    refreshKey: Int = 0
 ) {
-    // مشاهده تغییرات موقعیت اسکرول
+    LaunchedEffect(refreshKey) {
+        if (refreshKey > 0) {
+            // وقتی refreshKey تغییر کرد و بزرگتر از 0 شد
+            delay(50)
+            listState.scrollToItem(0)
+        }
+    }
+
     LaunchedEffect(scrollToPosition) {
-        if (scrollToPosition > 0) {
-            // تاخیر برای اطمینان از لود شدن آیتم‌ها
+        if (scrollToPosition > 0 && refreshKey == 0) {
+            // فقط در اولین بار و اگر موقعیت ذخیره شده داشته باشیم
             delay(50)
             listState.scrollToItem(scrollToPosition)
         }
