@@ -1,65 +1,52 @@
 package com.example.mysms.ui.theme
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mysms.data.SmsEntity
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    address: String,
     messages: List<SmsEntity>,
-    onBack: () -> Unit,
     onSendClick: (String) -> Unit,
     draftMessage: String,
     onDraftChange: (String) -> Unit,
-    isSending: Boolean = false,
-    sendingError: String? = null
+    address: String,
+    onBack: () -> Unit,
+    context: android.content.Context
 ) {
-    val context = LocalContext.current
-    val displayName by getContactNameState(context, address) // استفاده از تابع import شده
+    var text by remember { mutableStateOf(draftMessage) }
+    val lazyListState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
-    // وضعیت نمایش خطا
-    var showError by remember { mutableStateOf(sendingError != null) }
-
-    LaunchedEffect(sendingError) {
-        showError = sendingError != null
-        if (sendingError != null) {
-            delay(3000)
-            showError = false
-        }
+    // دریافت نام مخاطب - استفاده از تابع موجود در ChatComponents.kt
+    val contactName = remember(address) {
+        getContactName(context, address)
     }
-
-    val listState = rememberLazyListState()
-
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
-        }
-    }
-
-    val sortedMessages = remember(messages) { messages.sortedBy { it.date } }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // هدر صفحه چت
+        // هدر چت
         Surface(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth()
@@ -67,145 +54,158 @@ fun ChatScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onBack,
-                    colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Transparent)
+                // دکمه بازگشت
+                Icon(
+                    Icons.Filled.ArrowBack,
+                    contentDescription = "بازگشت",
+                    modifier = Modifier
+                        .clickable { onBack() }
+                        .padding(8.dp)
+                        .size(24.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // آواتار مخاطب
+                Surface(
+                    color = MaterialTheme.colorScheme.secondary,
+                    shape = CircleShape,
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Icon(
-                        Icons.Filled.ArrowBack,
-                        contentDescription = "بازگشت",
-                        tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    // تغییر اینجا: address به displayName
-                    Text(displayName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    if (isSending) {
-                        Text("در حال ارسال...", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = contactName.take(1).uppercase(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondary
+                        )
                     }
                 }
-            }
-        }
 
-        // نمایش خطا (اگر وجود دارد)
-        if (showError && sendingError != null) {
-            Surface(
-                color = Color(0xFFFFEBEE),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = sendingError,
-                    color = Color.Red,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(8.dp)
-                )
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // نام و شماره مخاطب
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = contactName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    if (contactName == address) {
+                        Text(
+                            text = address,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
 
         // لیست پیام‌ها
         LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            state = lazyListState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background),
+            reverseLayout = true,
+            contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-            items(sortedMessages) { sms ->
-                val isTempMessage = sms.id.startsWith("temp_") ||
-                        sms.id.startsWith("error_") ||
-                        sms.id.startsWith("sent_")
-                val isError = sms.id.startsWith("error_") || sms.body.contains("ارسال ناموفق")
-                val isSendingTemp = sms.id.startsWith("temp_")
-
-                ChatBubble(
-                    message = sms.body,
-                    isReceived = sms.type == 1,
-                    isTemp = isTempMessage,
-                    isError = isError,
-                    isSending = isSendingTemp
+            items(messages.reversed()) { message ->
+                MessageBubble(
+                    message = message,
+                    isOwnMessage = message.type == 2, // 2 = ارسالی
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
         }
 
-        // ورودی پیام
-        MessageInput(
-            text = draftMessage,
-            onTextChange = onDraftChange,
-            onSend = {
-                if (draftMessage.isNotBlank() && !isSending) {
-                    onSendClick(draftMessage)
-                    onDraftChange("")
-                }
-            },
-            isSending = isSending
-        )
-    }
-}
-
-@Composable
-fun ChatBubble(
-    message: String,
-    isReceived: Boolean,
-    isTemp: Boolean = false,
-    isError: Boolean = false,
-    isSending: Boolean = false
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isReceived) Arrangement.Start else Arrangement.End
-    ) {
+        // فیلد ورود متن
         Surface(
-            color = when {
-                isError -> Color(0xFFFFEBEE)
-                isTemp && !isError -> Color(0xFFE3F2FD)
-                isReceived -> Color.White
-                else -> Color(0xFFEFFDDE)
-            },
-            shape = RoundedCornerShape(
-                topStart = 12.dp,
-                topEnd = 12.dp,
-                bottomStart = if (isReceived) 0.dp else 12.dp,
-                bottomEnd = if (isReceived) 12.dp else 0.dp
-            ),
-            shadowElevation = if (isTemp) 0.dp else 1.dp,
-            border = if (isError) CardDefaults.outlinedCardBorder() else null
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = message,
-                    fontSize = 15.sp,
-                    color = if (isError) Color.Red else Color.Black,
-                    fontStyle = if (isTemp) FontStyle.Italic else FontStyle.Normal,
-                    modifier = Modifier.weight(1f)
+                // فیلد متن
+                BasicTextField(
+                    value = text,
+                    onValueChange = {
+                        text = it
+                        onDraftChange(it)
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(24.dp)
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    textStyle = TextStyle(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 16.sp
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (text.isEmpty()) {
+                                Text(
+                                    "پیام خود را بنویسید...",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 16.sp
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                    maxLines = 5
                 )
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
-                // آیکون وضعیت با Unicode
-                if (isTemp) {
-                    if (isSending) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(12.dp),
-                            strokeWidth = 1.dp,
-                            color = Color(0xFF0088CC)
-                        )
-                    } else if (isError) {
-                        Text(
-                            text = "❌",
-                            color = Color.Red,
-                            fontSize = 12.sp
-                        )
-                    } else {
-                        Text(
-                            text = "✅",
-                            color = Color(0xFF4CAF50),
-                            fontSize = 12.sp
+                // دکمه ارسال
+                Surface(
+                    color = if (text.isNotBlank()) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable {
+                            if (text.isNotBlank()) {
+                                onSendClick(text)
+                                text = ""
+                                onDraftChange("")
+
+                                // اسکرول به پایین
+                                coroutineScope.launch {
+                                    lazyListState.animateScrollToItem(0)
+                                }
+                            }
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.Send,
+                            contentDescription = "ارسال",
+                            tint = if (text.isNotBlank()) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
@@ -215,62 +215,70 @@ fun ChatBubble(
 }
 
 @Composable
-fun MessageInput(
-    text: String,
-    onTextChange: (String) -> Unit,
-    onSend: () -> Unit,
-    isSending: Boolean = false
+fun MessageBubble(
+    message: SmsEntity,
+    isOwnMessage: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = if (isOwnMessage) Alignment.End else Alignment.Start
     ) {
-        TextField(
-            value = text,
-            onValueChange = onTextChange,
-            modifier = Modifier.weight(1f),
-            placeholder = {
-                Text(
-                    "پیام خود را بنویسید...",
-                    color = if (isSending) Color.Gray else Color(0xFF666666)
-                )
-            },
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledContainerColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent
-            ),
-            maxLines = 3,
-            enabled = !isSending
-        )
-
-        IconButton(
-            onClick = {
-                if (text.isNotBlank() && !isSending) {
-                    onSend()
-                }
-            },
-            enabled = text.isNotBlank() && !isSending
-        ) {
-            if (isSending) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp,
-                    color = Color(0xFF0088CC)
-                )
+        Surface(
+            color = if (isOwnMessage) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.surfaceVariant,
+            shape = if (isOwnMessage) {
+                RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp)
             } else {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "ارسال",
-                    tint = if (text.isNotBlank()) Color(0xFF0088CC) else Color(0xFFCCCCCC)
+                RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
+            },
+            modifier = Modifier
+                .clip(
+                    if (isOwnMessage) {
+                        RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp)
+                    } else {
+                        RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
+                    }
+                )
+                .background(
+                    if (isOwnMessage) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surfaceVariant
+                )
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                // متن پیام
+                Text(
+                    text = message.body,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isOwnMessage) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurface,
+                    textAlign = if (isOwnMessage) TextAlign.End else TextAlign.Start
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // زمان پیام
+                Text(
+                    text = JalaliDateUtil.getTimeOnly(message.date),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isOwnMessage) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = if (isOwnMessage) TextAlign.End else TextAlign.Start
                 )
             }
         }
+
+        // وضعیت ارسال (برای پیام‌های ارسالی)
+        if (isOwnMessage) {
+            Text(
+                text = if (message.read) "✓ خوانده شده" else "ارسال شده",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, end = 4.dp)
+            )
+        }
     }
 }
+// تابع getContactName حذف شده - از تابع موجود در ChatComponents.kt استفاده می‌شود

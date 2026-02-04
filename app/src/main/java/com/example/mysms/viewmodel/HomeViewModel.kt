@@ -1,6 +1,10 @@
 package com.example.mysms.viewmodel
 
 
+import android.Manifest
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.os.Build
 import kotlinx.coroutines.withContext
 import android.util.Log
 import android.app.Application
@@ -73,6 +77,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _expandedDates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val expandedDates = _expandedDates.asStateFlow()
 
+    // ==================== Stateهای Onboarding ====================
+    private val _onboardingCompleted = MutableStateFlow(false)
+    val onboardingCompleted = _onboardingCompleted.asStateFlow()
+
+    private val _permissionsState = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val permissionsState = _permissionsState.asStateFlow()
+
+    private val _onboardingStep = MutableStateFlow(0)
+    val onboardingStep = _onboardingStep.asStateFlow()
+
 
     // پیش‌نویس‌ها
     val drafts = mutableStateMapOf<String, String>()
@@ -91,6 +105,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             // 3. بارگذاری نام‌های ذخیره شده تب‌ها
             loadTabNames()
+
+            // 5. بارگذاری وضعیت Onboarding
+            checkOnboardingStatus()
+
 
             // ==================== بارگذاری وضعیت expand/collapse تاریخ‌ها ====================
             // 4. بارگذاری وضعیت expand/collapse تاریخ‌ها
@@ -554,6 +572,127 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             0 -> sim1TabName.value
             1 -> sim2TabName.value
             else -> "سیم‌کارت"
+        }
+    }
+
+    // ==================== توابع مدیریت Onboarding ====================
+
+    /**
+     * بررسی وضعیت Onboarding
+     */
+    private fun checkOnboardingStatus() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = getApplication<Application>()
+                    .getSharedPreferences("onboarding_prefs", Context.MODE_PRIVATE)
+
+                val isCompleted = prefs.getBoolean("onboarding_completed", false)
+                _onboardingCompleted.value = isCompleted
+
+                Log.d("HomeViewModel", "📋 Onboarding status: $isCompleted")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error checking onboarding status: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * تکمیل Onboarding
+     */
+    fun completeOnboarding() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = getApplication<Application>()
+                    .getSharedPreferences("onboarding_prefs", Context.MODE_PRIVATE)
+
+                prefs.edit().putBoolean("onboarding_completed", true).apply()
+                _onboardingCompleted.value = true
+
+                Log.d("HomeViewModel", "✅ Onboarding completed")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error completing onboarding: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * ریست کردن Onboarding (برای تست یا وقتی کاربر مجوز لغو کرده)
+     */
+    fun resetOnboarding() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = getApplication<Application>()
+                    .getSharedPreferences("onboarding_prefs", Context.MODE_PRIVATE)
+
+                prefs.edit().putBoolean("onboarding_completed", false).apply()
+                _onboardingCompleted.value = false
+                _onboardingStep.value = 0
+
+                Log.d("HomeViewModel", "🔄 Onboarding reset")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error resetting onboarding: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * بررسی وضعیت یک مجوز خاص
+     */
+    fun checkPermission(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(
+            getApplication(),
+            permission
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * بررسی همه مجوزهای ضروری
+     */
+    fun checkAllRequiredPermissions(): Boolean {
+        val requiredPermissions = listOfNotNull(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_PHONE_STATE,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                Manifest.permission.POST_NOTIFICATIONS else null
+        )
+
+        return requiredPermissions.all { permission ->
+            checkPermission(permission)
+        }
+    }
+
+    /**
+     * گرفتن لیست مجوزهای ضروری که داده نشده‌اند
+     */
+    fun getMissingPermissions(): List<String> {
+        val requiredPermissions = listOfNotNull(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_PHONE_STATE,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                Manifest.permission.POST_NOTIFICATIONS else null
+        )
+
+        return requiredPermissions.filter { permission ->
+            !checkPermission(permission)
+        }
+    }
+
+    /**
+     * گرفتن نام نمایشی مجوزها
+     */
+    fun getPermissionDisplayName(permission: String): String {
+        return when (permission) {
+            Manifest.permission.READ_SMS -> "خواندن پیامک‌ها"
+            Manifest.permission.RECEIVE_SMS -> "دریافت پیامک جدید"
+            Manifest.permission.SEND_SMS -> "ارسال پیامک"
+            Manifest.permission.READ_CONTACTS -> "دفترچه تلفن"
+            Manifest.permission.READ_PHONE_STATE -> "تشخیص سیم‌کارت"
+            Manifest.permission.POST_NOTIFICATIONS -> "اعلان‌ها"
+            else -> permission
         }
     }
 }

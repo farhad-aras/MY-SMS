@@ -1,5 +1,6 @@
 package com.example.mysms.ui.theme
 
+import java.text.SimpleDateFormat
 import java.util.*
 
 object JalaliDateUtil {
@@ -70,5 +71,118 @@ object JalaliDateUtil {
         jm = 12
         jd = jDayNo + 1
         return "$jy/$jm/$jd"
+    }
+
+    /**
+     * گرفتن نام روز هفته به فارسی
+     */
+    fun getPersianDayOfWeek(timestamp: Long): String {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = timestamp
+
+        return when (calendar.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.SATURDAY -> "شنبه"
+            Calendar.SUNDAY -> "یکشنبه"
+            Calendar.MONDAY -> "دوشنبه"
+            Calendar.TUESDAY -> "سه‌شنبه"
+            Calendar.WEDNESDAY -> "چهارشنبه"
+            Calendar.THURSDAY -> "پنجشنبه"
+            Calendar.FRIDAY -> "جمعه"
+            else -> ""
+        }
+    }
+
+    /**
+     * گرفتن نام ماه شمسی
+     */
+    fun getPersianMonthName(timestamp: Long): String {
+        val dateStr = getDateOnly(timestamp)
+        val parts = dateStr.split("/")
+        if (parts.size >= 2) {
+            val month = parts[1].toIntOrNull() ?: return dateStr
+
+            return when (month) {
+                1 -> "فروردین"
+                2 -> "اردیبهشت"
+                3 -> "خرداد"
+                4 -> "تیر"
+                5 -> "مرداد"
+                6 -> "شهریور"
+                7 -> "مهر"
+                8 -> "آبان"
+                9 -> "آذر"
+                10 -> "دی"
+                11 -> "بهمن"
+                12 -> "اسفند"
+                else -> dateStr
+            }
+        }
+        return dateStr
+    }
+
+    /**
+     * فرمت کامل تاریخ شمسی
+     */
+    fun getFullJalaliDate(timestamp: Long): String {
+        val dateStr = getDateOnly(timestamp)
+        val parts = dateStr.split("/")
+        if (parts.size >= 3) {
+            val year = parts[0]
+            val month = parts[1].toIntOrNull() ?: return dateStr
+            val day = parts[2]
+
+            val monthName = when (month) {
+                1 -> "فروردین"
+                2 -> "اردیبهشت"
+                3 -> "خرداد"
+                4 -> "تیر"
+                5 -> "مرداد"
+                6 -> "شهریور"
+                7 -> "مهر"
+                8 -> "آبان"
+                9 -> "آذر"
+                10 -> "دی"
+                11 -> "بهمن"
+                12 -> "اسفند"
+                else -> ""
+            }
+
+            return "$day $monthName $year"
+        }
+        return dateStr
+    }
+
+    /**
+     * گرفتن مدت زمان نسبی (مثلاً "۲ ساعت پیش")
+     */
+    fun getRelativeTimeAgo(timestamp: Long): String {
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        val days = hours / 24
+
+        return when {
+            days > 0 -> "$days روز پیش"
+            hours > 0 -> "$hours ساعت پیش"
+            minutes > 0 -> "$minutes دقیقه پیش"
+            else -> "همین الان"
+        }
+    }
+
+    /**
+     * بررسی آیا دو تاریخ در یک روز هستند یا نه
+     */
+    fun isSameDay(timestamp1: Long, timestamp2: Long): Boolean {
+        return getDateOnly(timestamp1) == getDateOnly(timestamp2)
+    }
+
+    /**
+     * گرفتن تاریخ امروز به صورت شمسی
+     */
+    fun getTodayJalali(): String {
+        return getDateOnly(System.currentTimeMillis())
     }
 }

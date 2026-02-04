@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- برای باز کردن تنظیمات برنامه -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- برای اندروید ۹ و بالاتر -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -36,7 +39,10 @@
             android:name=".ui.theme.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.MySMS">
+            android:theme="@style/Theme.MySMS"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -51,6 +57,11 @@
                 <data android:scheme="smsto" />
                 <data android:host="open_chat" />
             </intent-filter>
+
+            <!-- Meta-data برای splash screen -->
+            <meta-data
+                android:name="android.app.splash_screen_drawable"
+                android:resource="@drawable/ic_launcher_foreground" />
 
         </activity>
 

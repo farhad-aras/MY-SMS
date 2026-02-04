@@ -3,17 +3,15 @@ package com.example.mysms.ui.theme
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -37,7 +35,6 @@ import android.content.Context
 import android.net.Uri
 import android.provider.ContactsContract
 import android.util.Log
-
 
 // توابع کمکی
 @Composable
@@ -124,8 +121,7 @@ fun getContactName(context: Context, phoneNumber: String): String {
     }
 }
 
-// کامپوننت‌های رابط کاربری
-@OptIn(ExperimentalMaterial3Api::class)
+// کامپوننت‌های رابط کاربری - نسخه ساده شده
 @Composable
 fun SwipeToPinWithConfirm(
     data: ConversationData,
@@ -134,79 +130,23 @@ fun SwipeToPinWithConfirm(
     onPinAction: () -> Unit,
     onClick: () -> Unit
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { dismissValue ->
-            when (dismissValue) {
-                SwipeToDismissBoxValue.EndToStart -> {
-                    onPinAction()
-                    false
-                }
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    false
-                }
-                else -> false
-            }
-        }
-    )
-
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromEndToStart = true,
-        enableDismissFromStartToEnd = true,
-        backgroundContent = {
-            val direction = dismissState.dismissDirection
-            val color by animateColorAsState(
-                when (dismissState.targetValue) {
-                    SwipeToDismissBoxValue.EndToStart -> Color(0xFF4CAF50)
-                    SwipeToDismissBoxValue.StartToEnd -> Color(0xFFE57373)
-                    else -> Color.Transparent
-                }, label = "BgColor"
-            )
-            val scale by animateFloatAsState(
-                if (dismissState.targetValue != SwipeToDismissBoxValue.Settled) 1.2f else 0.8f,
-                label = "IconScale"
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(color)
-                    .padding(horizontal = 20.dp),
-                contentAlignment = if (direction == SwipeToDismissBoxValue.EndToStart) Alignment.CenterEnd else Alignment.CenterStart
-            ) {
-                if (direction == SwipeToDismissBoxValue.EndToStart) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = "Confirm",
-                            modifier = Modifier.scale(scale),
-                            tint = Color.White
-                        )
-                        Text(
-                            text = if (isPinned) "لغو پین" else "پین کردن",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                } else if (direction == SwipeToDismissBoxValue.StartToEnd) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Cancel",
-                            modifier = Modifier.scale(scale),
-                            tint = Color.White
-                        )
-                        Text(
-                            text = "لغو",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
+    // نسخه ساده بدون swipe (فقط کلیک)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clickable {
+                onClick()
+                // برای تست، روی long click پین می‌شود
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPinned) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isPinned) 6.dp else 2.dp
+        ),
+        shape = RoundedCornerShape(16.dp)
     ) {
         ConversationItem(
             sms = data.sms,
@@ -232,169 +172,155 @@ fun ConversationItem(sms: SmsEntity, isDraft: Boolean, unreadCount: Int, isPinne
 
     val hasUnreadBorder = unreadCount > 0
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clickable { onClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = cardColor
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isPinned) 6.dp else 2.dp
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column {
-            if (hasUnreadBorder) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .padding(bottom = 1.dp)
-                )
-            }
-
-            Row(
+    Column {
+        if (hasUnreadBorder) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primary,
-                    shape = CircleShape,
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = firstChar,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                    .height(3.dp)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(bottom = 1.dp)
+            )
+        }
 
-                        if (isPinned) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(20.dp)
-                                    .background(Color(0xFFFFA000), CircleShape)
-                                    .padding(4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Star,
-                                    contentDescription = "پین شده",
-                                    modifier = Modifier.size(12.dp),
-                                    tint = Color.White
-                                )
-                            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary,
+                shape = CircleShape,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = firstChar,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+
+                    if (isPinned) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(20.dp)
+                                .background(Color(0xFFFFA000), CircleShape)
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = "پین شده",
+                                modifier = Modifier.size(12.dp),
+                                tint = Color.White
+                            )
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = displayName,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            if (isDraft) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        "پیش‌نویس",
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                }
-                            }
-                        }
-
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = JalaliDateUtil.getDateOnly(sms.date),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = JalaliDateUtil.getTimeOnly(sms.date),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = sms.body,
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = if (isDraft) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontStyle = if (isDraft) FontStyle.Italic else FontStyle.Normal,
-                            modifier = Modifier.weight(1f)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            if (unreadCount > 0) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shape = CircleShape,
-                                    modifier = Modifier.size(22.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = if (unreadCount > 9) "9+" else unreadCount.toString(),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
-
+                        if (isDraft) {
+                            Spacer(modifier = Modifier.width(6.dp))
                             Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                color = MaterialTheme.colorScheme.errorContainer,
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "SIM ${sms.subId}",
+                                    "پیش‌نویس",
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                             }
+                        }
+                    }
+
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = JalaliDateUtil.getDateOnly(sms.date),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = JalaliDateUtil.getTimeOnly(sms.date),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = sms.body,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isDraft) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontStyle = if (isDraft) FontStyle.Italic else FontStyle.Normal,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        if (unreadCount > 0) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = CircleShape,
+                                modifier = Modifier.size(22.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = if (unreadCount > 9) "9+" else unreadCount.toString(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "SIM ${sms.subId}",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }

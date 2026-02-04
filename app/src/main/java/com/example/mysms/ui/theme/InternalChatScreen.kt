@@ -1,10 +1,6 @@
 package com.example.mysms.ui.theme
 
-import com.example.mysms.ui.theme.getContactNameState
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.mysms.viewmodel.HomeViewModel
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,9 +9,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,8 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mysms.data.SmsEntity
 import android.content.Context
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mysms.viewmodel.HomeViewModel
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -62,7 +60,6 @@ fun InternalChatScreen(
 
     val listState = rememberLazyListState()
 
-    // *** اضافه کردن این بلوک:***
     // مشاهده وضعیت expand/collapse از ViewModel
     val expandedDates by vm.expandedDates.collectAsState()
 
@@ -82,7 +79,6 @@ fun InternalChatScreen(
         }
     }
 
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -98,13 +94,13 @@ fun InternalChatScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // *** اضافه کردن دکمه Back:***
+                // دکمه Back با آیکون معمولی
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack, // استفاده از ArrowBack
+                        imageVector = Icons.Filled.ArrowBack, // تغییر از AutoMirrored.Filled.ArrowBack
                         contentDescription = "بازگشت",
                         tint = Color.White
                     )
@@ -130,6 +126,7 @@ fun InternalChatScreen(
                 }
             }
         }
+
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -243,7 +240,7 @@ fun InternalChatScreen(
                     modifier = Modifier.padding(start = 8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        imageVector = Icons.Filled.Send, // تغییر از AutoMirrored.Filled.Send
                         contentDescription = "ارسال",
                         tint = MaterialTheme.colorScheme.primary
                     )

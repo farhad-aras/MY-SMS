@@ -1,178 +1,209 @@
 package com.example.mysms.ui.theme
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.mysms.data.SmsEntity
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 
+/**
+ * صفحه Loading ساده برای مواقعی که نیاز به نمایش بارگذاری داریم
+ * (مثلاً هنگام سینک پیام‌ها)
+ */
 @Composable
 fun LoadingScreen(
     progress: Int,
     isSyncing: Boolean,
-    smsList: List<SmsEntity>,
-    onStartSync: () -> Unit,
-    onContactClick: (String) -> Unit,
-    selectedTabIndex: Int,
-    onTabChange: (Int) -> Unit
-    ,
-    sim1Id: Int?,
-    sim2Id: Int?
+    message: String = "در حال بارگذاری..."
 ) {
-    val tabs = listOf("سیم‌کارت ۱", "سیم‌کارت ۲")
-
-    // فیلتر کردن دقیق بر اساس شناسه‌های واقعی که از ViewModel آمده
-    val filteredList = remember(selectedTabIndex, smsList, sim1Id, sim2Id) {
-        val targetSubId = if (selectedTabIndex == 0) sim1Id else sim2Id
-        if (targetSubId != null) {
-            smsList.filter { it.subId == targetSubId }
-        } else {
-            emptyList()
-        }
-    }
-
-    val groupedSms = remember(filteredList) {
-        filteredList.groupBy { it.address }
-    }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (isSyncing) {
-            LinearProgressIndicator(
-                progress = { progress / 100f },
-                modifier = Modifier.fillMaxWidth()
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // لوگو یا آیکون
+            CircularProgressIndicator(
+                modifier = Modifier.size(64.dp),
+                strokeWidth = 4.dp,
+                color = MaterialTheme.colorScheme.primary
             )
-            Text("در حال دریافت: $progress%", modifier = Modifier.padding(8.dp))
-        } else {
-            Button(onClick = onStartSync, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                Text("بروزرسانی پیامک‌ها")
-            }
-        }
 
-        TabRow(selectedTabIndex = selectedTabIndex) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTabIndex == index,
-                    onClick = { onTabChange(index) },
-                    text = { Text(title) }
-                )
-            }
-        }
+            Spacer(modifier = Modifier.height(32.dp))
 
-        if (groupedSms.isEmpty() && !isSyncing) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("پیامکی یافت نشد")
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(8.dp)) {
-                items(groupedSms.keys.toList()) { address ->
-                    val messages = groupedSms[address] ?: emptyList()
-                    val lastMsg = messages.firstOrNull()
+            // عنوان
+            Text(
+                text = message,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onBackground
+            )
 
-                    // وضعیت خوانده شدن را از پیام می‌گیریم
-                    val isMsgRead = lastMsg?.read ?: true
+            Spacer(modifier = Modifier.height(16.dp))
 
-                    ConversationItem(
-                        address = address,
-                        lastMessage = lastMsg?.body ?: "",
-                        count = messages.size,
-                        subId = lastMsg?.subId ?: -1,
-                        isRead = isMsgRead,
-                        onItemClick = onContactClick
+            // توضیح
+            Text(
+                text = "لطفا کمی صبر کنید",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Progress bar (اگر در حال سینک است)
+            if (isSyncing && progress > 0) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    LinearProgressIndicator(
+                        progress = progress / 100f, // حذف lambda و استفاده مستقیم از Float
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        color = MaterialTheme.colorScheme.primary
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "$progress%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // نکات یا راهنمایی‌ها
+            if (!isSyncing) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "نکته:",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "• برای استفاده کامل از برنامه، تمام مجوزها را تأیید کنید\n" +
+                                    "• پیام‌های قدیمی شما در برنامه ذخیره می‌شوند\n" +
+                                    "• می‌توانید بین سیم‌کارت‌ها سوئیچ کنید",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+/**
+ * کامپوننت Loading کوچک برای استفاده در دکمه‌ها یا بخش‌های خاص
+ */
 @Composable
-fun ConversationItem(
-    address: String,
-    lastMessage: String,
-    count: Int,
-    subId: Int,
-    isRead: Boolean,
-    onItemClick: (String) -> Unit
+fun SmallLoadingIndicator(
+    isLoading: Boolean,
+    content: @Composable () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val displayName = remember(address) {
-        var name = address
-        val uri = android.net.Uri.withAppendedPath(
-            android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-            android.net.Uri.encode(address)
-        )
-        val projection = arrayOf(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
-        try {
-            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) name = cursor.getString(0)
-            }
-        } catch (e: Exception) { }
-        name
-    }
+    Box(contentAlignment = Alignment.Center) {
+        content()
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable { onItemClick(address) },
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .background(Color(0xFFBBDEFB), CircleShape),
-                contentAlignment = Alignment.Center
+        if (isLoading) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.5f),
+                modifier = Modifier.matchParentSize()
             ) {
-                Text(text = displayName.take(1).uppercase(), fontWeight = FontWeight.Bold)
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = displayName, fontWeight = FontWeight.Bold)
-
-                Text(
-                    text = lastMessage,
-                    maxLines = 1,
-                    color = if (isRead) Color.Gray else Color.Black,
-                    fontWeight = if (isRead) FontWeight.Normal else FontWeight.Bold,
-                    fontSize = 14.sp
+                CircularProgressIndicator(
+                    modifier = Modifier.size(32.dp),
+                    strokeWidth = 3.dp,
+                    color = Color.White
                 )
             }
+        }
+    }
+}
 
-            Column(horizontalAlignment = Alignment.End) {
-                if (!isRead) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .background(Color.Red, CircleShape)
-                            .padding(bottom = 4.dp)
-                    )
-                } else if (count > 1) {
-                    Surface(color = Color.LightGray, shape = CircleShape) {
-                        Text(
-                            text = "$count",
-                            modifier = Modifier.padding(horizontal = 6.dp),
-                            fontSize = 12.sp
-                        )
-                    }
-                }
+/**
+ * کامپوننت خطای ساده
+ */
+@Composable
+fun ErrorScreen(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.errorContainer
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = "خطا",
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "SIM $subId", fontSize = 10.sp, color = Color.LightGray)
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "خطا",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("تلاش مجدد")
             }
         }
     }

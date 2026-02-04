@@ -1,5 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MySMS</string>
     <string name="shortcut_new_sms_short">پیام جدید</string>
     <string name="shortcut_new_sms_long">ایجاد پیام جدید</string>
+
+    <!-- Onboarding Wizard Strings -->
+    <string name="onboarding_welcome">خوش آمدید به پیام‌رسان</string>
+    <string name="onboarding_welcome_desc">برای استفاده کامل از امکانات برنامه، نیاز به چند مجوز داریم</string>
+
+    <string name="onboarding_read_sms">دسترسی به پیامک‌ها</string>
+    <string name="onboarding_read_sms_desc">برای نمایش و مدیریت پیام‌های شما نیاز به دسترسی به پیامک‌ها داریم</string>
+
+    <string name="onboarding_receive_sms">دریافت پیامک جدید</string>
+    <string name="onboarding_receive_sms_desc">برای دریافت پیام‌های جدید حتی وقتی برنامه بسته است</string>
+
+    <string name="onboarding_contacts">دفترچه تلفن</string>
+    <string name="onboarding_contacts_desc">برای نمایش نام مخاطبین به جای شماره</string>
+
+    <string name="onboarding_phone_state">تشخیص سیم‌کارت</string>
+    <string name="onboarding_phone_state_desc">برای تشخیص SIM1 و SIM2 و مدیریت جداگانه پیام‌ها</string>
+
+    <string name="onboarding_notifications">اعلان‌ها</string>
+    <string name="onboarding_notifications_desc">برای نمایش نوتیفیکیشن پیام‌های جدید</string>
+
+    <string name="onboarding_complete">آماده استفاده!</string>
+    <string name="onboarding_complete_desc">تمام مراحل با موفقیت تکمیل شد\nاکنون می‌توانید از برنامه استفاده کنید</string>
+
+    <!-- Permission Strings -->
+    <string name="permission_required">ضروری</string>
+    <string name="permission_optional">اختیاری</string>
+    <string name="permission_granted">تأیید شده</string>
+    <string name="permission_denied">تأیید نشده</string>
+
+    <!-- Button Strings -->
+    <string name="btn_next">ادامه</string>
+    <string name="btn_previous">قبلی</string>
+    <string name="btn_start_using">شروع استفاده</string>
+    <string name="btn_grant_permission">درخواست مجوز</string>
+    <string name="btn_open_settings">تنظیمات</string>
+    <string name="btn_skip_permission">رد کردن این مجوز</string>
+
+    <!-- Messages -->
+    <string name="msg_please_grant_permissions">لطفاً تمام مجوزها را تأیید کنید</string>
+    <string name="msg_permissions_granted">✅ مجوزها تأیید شد</string>
+    <string name="msg_loading_messages">در حال بارگذاری پیامک‌ها...</string>
+    <string name="msg_preparing">در حال آماده‌سازی...</string>
+    <string name="msg_please_wait">لطفا کمی صبر کنید</string>
+
+    <!-- Tips -->
+    <string name="tip_grant_all_permissions">برای استفاده کامل از برنامه، تمام مجوزها را تأیید کنید</string>
+    <string name="tip_old_messages_saved">پیام‌های قدیمی شما در برنامه ذخیره می‌شوند</string>
+    <string name="tip_switch_sim">می‌توانید بین سیم‌کارت‌ها سوئیچ کنید</string>
+
+    <!-- Error Messages -->
+    <string name="error_permission_required">این مجوز برای عملکرد برنامه ضروری است</string>
+    <string name="error_retry">تلاش مجدد</string>
+
+    <!-- Status -->
+    <string name="status_step">مرحله %1$d از %2$d</string>
+    <string name="status_loading">%1$d%% تکمیل شد</string>
+
+    <!-- Tab Names -->
+    <string name="tab_sim1">سیم ۱</string>
+    <string name="tab_sim2">سیم ۲</string>
 </resources>
