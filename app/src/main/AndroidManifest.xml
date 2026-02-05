@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- برای تنظیم برنامه به عنوان پیش‌فرض در اندروید قدیمی‌تر -->
+    <uses-permission android:name="android.permission.WRITE_SMS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -57,6 +59,39 @@
                 <data android:scheme="smsto" />
                 <data android:host="open_chat" />
             </intent-filter>
+
+            <!-- intent-filter برای تنظیم برنامه به عنوان برنامه پیش‌فرض پیامک -->
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="smsto" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="smsto" />
+                <data android:scheme="sms" />
+                <data android:scheme="mms" />
+            </intent-filter>
+
+            <!-- meta-data برای قابلیت برنامه پیش‌فرض پیامک -->
+            <meta-data
+                android:name="android.app.role.SMS"
+                android:value="true" />
 
             <!-- Meta-data برای splash screen -->
             <meta-data

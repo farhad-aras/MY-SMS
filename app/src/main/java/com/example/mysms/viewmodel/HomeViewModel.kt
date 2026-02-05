@@ -1,6 +1,8 @@
 package com.example.mysms.viewmodel
 
 
+import android.provider.Telephony
+import android.content.Intent
 import android.Manifest
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
@@ -87,6 +89,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _onboardingStep = MutableStateFlow(0)
     val onboardingStep = _onboardingStep.asStateFlow()
 
+    // ==================== State برای وضعیت برنامه پیش‌فرض ====================
+    private val _isDefaultSmsApp = MutableStateFlow(false)
+    val isDefaultSmsApp = _isDefaultSmsApp.asStateFlow()
+
 
     // پیش‌نویس‌ها
     val drafts = mutableStateMapOf<String, String>()
@@ -108,6 +114,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             // 5. بارگذاری وضعیت Onboarding
             checkOnboardingStatus()
+
+            // 6. بررسی وضعیت برنامه پیش‌فرض
+            checkDefaultSmsAppStatus()
 
 
             // ==================== بارگذاری وضعیت expand/collapse تاریخ‌ها ====================
@@ -694,5 +703,85 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             Manifest.permission.POST_NOTIFICATIONS -> "اعلان‌ها"
             else -> permission
         }
+    }
+
+    // ==================== توابع مدیریت برنامه پیش‌فرض ====================
+
+    /**
+     * بررسی آیا برنامه به عنوان برنامه پیش‌فرض پیامک تنظیم شده است
+     */
+    fun checkDefaultSmsAppStatus() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val isDefault = getApplication<Application>().packageName ==
+                        Telephony.Sms.getDefaultSmsPackage(getApplication())
+
+                _isDefaultSmsApp.value = isDefault
+                Log.d("HomeViewModel", "📱 Default SMS App status: $isDefault")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error checking default SMS app: ${e.message}", e)
+                _isDefaultSmsApp.value = false
+            }
+        }
+    }
+
+    /**
+     * باز کردن صفحه تنظیمات برای انتخاب برنامه پیش‌فرض پیامک
+     */
+    fun openDefaultSmsAppSettings() {
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+                intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME,
+                    getApplication<Application>().packageName)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                getApplication<Application>().startActivity(intent)
+
+                Log.d("HomeViewModel", "⚙️ Opening default SMS app settings")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error opening SMS settings: ${e.message}", e)
+                // Fallback به تنظیمات اصلی برنامه
+                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                intent.data = android.net.Uri.fromParts("package",
+                    getApplication<Application>().packageName, null)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                getApplication<Application>().startActivity(intent)
+            }
+        }
+    }
+
+    /**
+     * بررسی آیا برنامه پیش‌فرض است یا همه مجوزهای ضروری داده شده‌اند
+     */
+    fun isSetupComplete(): Boolean {
+        return _isDefaultSmsApp.value || checkAllRequiredPermissions()
+    }
+
+    /**
+     * گرفتن لیست تمام موارد تنظیم نشده (مجوزها + برنامه پیش‌فرض)
+     */
+    fun getAllMissingSetupItems(): List<SetupItem> {
+        val missingItems = mutableListOf<SetupItem>()
+
+        // بررسی مجوزهای ضروری
+        val missingPermissions = getMissingPermissions()
+        missingPermissions.forEach { permission ->
+            missingItems.add(SetupItem.Permission(permission, getPermissionDisplayName(permission)))
+        }
+
+        // بررسی برنامه پیش‌فرض
+        if (!_isDefaultSmsApp.value) {
+            missingItems.add(SetupItem.DefaultSmsApp)
+        }
+
+        return missingItems
+    }
+}
+
+// ==================== مدل برای آیتم‌های تنظیم ====================
+sealed class SetupItem {
+    data class Permission(val permission: String, val displayName: String) : SetupItem()
+    object DefaultSmsApp : SetupItem() {
+        const val DISPLAY_NAME = "برنامه پیش‌فرض پیامک"
     }
 }

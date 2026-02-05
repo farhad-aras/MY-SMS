@@ -1,27 +1,21 @@
     package com.example.mysms.ui.theme
 
 
-
-    import com.example.mysms.ui.theme.OnboardingScreen
-    import com.example.mysms.ui.theme.shouldShowOnboarding
-    import com.example.mysms.ui.theme.checkAllRequiredPermissions
-    import kotlinx.coroutines.flow.collect
+    import android.provider.Telephony
+    import android.content.Intent
+    import android.provider.Settings
     import androidx.compose.material.icons.filled.CheckCircle
-    import androidx.compose.material.icons.outlined.CheckCircle
     import androidx.activity.compose.BackHandler
-    import com.example.mysms.ui.theme.SettingsScreen
     import androidx.compose.material.icons.filled.MoreVert
     import androidx.compose.material.icons.filled.Edit
     import androidx.compose.material.icons.filled.Settings
     import androidx.compose.material3.Divider
     import androidx.compose.material3.DropdownMenu
     import androidx.compose.material3.DropdownMenuItem
-    import com.example.mysms.ui.theme.ForegroundSmsService
     import kotlinx.coroutines.launch
     import androidx.compose.runtime.rememberCoroutineScope
     import android.Manifest
     import android.content.Context
-    import android.content.Intent
     import android.content.pm.PackageManager
     import android.os.Build
     import android.os.Bundle
@@ -34,11 +28,7 @@
     import androidx.compose.foundation.layout.*
     import androidx.compose.foundation.lazy.rememberLazyListState
     import androidx.compose.material.icons.Icons
-    import androidx.compose.material.icons.filled.ArrowBack
-    import androidx.compose.material.icons.filled.Edit
-    import androidx.compose.material.icons.filled.MoreVert
     import androidx.compose.material.icons.filled.Refresh
-    import androidx.compose.material.icons.filled.Settings
     import androidx.compose.material.icons.filled.Star
     import androidx.compose.material3.*
     import androidx.compose.runtime.*
@@ -122,7 +112,21 @@
                 ).show()
             }
         }
-    
+
+        // ==================== توابع بررسی برنامه پیش‌فرض ====================
+
+        /**
+         * بررسی آیا برنامه به عنوان برنامه پیش‌فرض پیامک تنظیم شده است
+         */
+        fun isDefaultSmsApp(): Boolean {
+            return packageName == Telephony.Sms.getDefaultSmsPackage(this)
+        }
+
+        /**
+         * باز کردن صفحه تنظیمات برای انتخاب برنامه پیش‌فرض پیامک
+         */
+
+
         private fun startForegroundServiceIfNeeded() {
             try {
                 Log.d("MainActivity", "🚀 Starting services...")
@@ -175,6 +179,28 @@
     fun MySMSApp() {
         val context = LocalContext.current
         val coroutineScope = rememberCoroutineScope()
+
+        // توابع بررسی برنامه پیش‌فرض
+        fun isDefaultSmsApp(): Boolean {
+            return context.packageName == Telephony.Sms.getDefaultSmsPackage(context)
+        }
+
+        fun openDefaultSmsAppSettings() {
+            try {
+                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+                intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
+                context.startActivity(intent)
+                Log.d("MySMSApp", "⚙️ Opening default SMS app settings")
+            } catch (e: Exception) {
+                Log.e("MySMSApp", "❌ Error opening SMS settings: ${e.message}", e)
+                // Fallback به تنظیمات اصلی برنامه
+                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                intent.data = android.net.Uri.fromParts("package", context.packageName, null)
+                context.startActivity(intent)
+            }
+        }
+
+
     
     
     
@@ -416,7 +442,6 @@
         }
     
         // صفحه 1: بارگذاری اولیه (اگر قبلا انجام نشده)
-        // صفحه 1: بارگذاری اولیه
         // صفحه 1: Onboarding یا Loading
         if (!isFirstLoadDone || shouldShowOnboarding) {
             if (shouldShowOnboarding) {
@@ -430,6 +455,15 @@
                             vm.startInitialSync()
                             isFirstLoadDone = true
                             appPrefs.edit().putBoolean("initial_load_done", true).apply()
+
+                            // در onCreate، بعد از خط DefaultSmsDisabler:
+                            if (!isDefaultSmsApp()) {
+                                Toast.makeText(
+                                    context,
+                                    "⚠️ برای جلوگیری از دو نوتیفیکیشن، برنامه را به پیش‌فرض تنظیم کنید",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         } else {
                             // اگر هنوز مجوزها کامل نیست، دوباره onboarding نشان بده
                             shouldShowOnboarding = true
@@ -437,6 +471,25 @@
                     },
                     viewModel = vm
                 )
+
+
+                // LaunchedEffect جداگانه برای نمایش هشدار
+                LaunchedEffect(Unit) {
+                    val warningPrefs = context.getSharedPreferences("sms_warning_prefs", Context.MODE_PRIVATE)
+                    val shouldShowWarning = warningPrefs.getBoolean("show_default_sms_warning", false)
+
+                    if (shouldShowWarning && !isDefaultSmsApp()) {
+                        delay(2000) // تاخیر 2 ثانیه
+                        Toast.makeText(
+                            context,
+                            "💡 نکته: برای جلوگیری از دو نوتیفیکیشن، لطفاً از منو (⋯) گزینه 'تنظیم برنامه پیش‌فرض' را انتخاب کنید",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        // پاک کردن فلگ
+                        warningPrefs.edit().putBoolean("show_default_sms_warning", false).apply()
+                    }
+                }
+
             } else {
                 // صفحه Loading قدیمی (فقط برای بارگذاری)
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -636,11 +689,11 @@
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
-    
                         DropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false }
                         ) {
+                            // آیتم اصلی: تغییر نام تب‌های سیم‌کارت
                             DropdownMenuItem(
                                 text = { Text("تغییر نام تب‌های سیم‌کارت") },
                                 onClick = {
@@ -654,13 +707,44 @@
                                     )
                                 }
                             )
-    
+
                             Divider()
-    
+
+                            // آیتم تنظیم برنامه پیش‌فرض
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Star,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (isDefaultSmsApp()) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            if (isDefaultSmsApp())
+                                                "برنامه پیش‌فرض ✅"
+                                            else
+                                                "تنظیم برنامه پیش‌فرض"
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    openDefaultSmsAppSettings()
+                                }
+                            )
+
+                            Divider()
+
+                            // آیتم تنظیمات (placeholder)
                             DropdownMenuItem(
                                 text = { Text("تنظیمات") },
                                 onClick = {
                                     showMenu = false
+                                    Toast.makeText(context, "به زودی...", Toast.LENGTH_SHORT).show()
                                 },
                                 leadingIcon = {
                                     Icon(
@@ -670,6 +754,7 @@
                                 }
                             )
                         }
+
                     }
                 )
     
@@ -837,8 +922,10 @@
                 )
             }
         }
-    
-    
+
+
+
+
     
     }
     

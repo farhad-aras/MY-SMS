@@ -63,4 +63,24 @@
     <!-- Tab Names -->
     <string name="tab_sim1">سیم ۱</string>
     <string name="tab_sim2">سیم ۲</string>
+
+
+    <!-- Default SMS App Strings -->
+    <string name="onboarding_default_sms">برنامه پیش‌فرض پیامک</string>
+    <string name="onboarding_default_sms_desc">برای جلوگیری از دریافت دو نوتیفیکیشن\nلطفاً این برنامه را به عنوان برنامه پیش‌فرض پیامک تنظیم کنید</string>
+
+    <string name="default_sms_status_set">تنظیم شده</string>
+    <string name="default_sms_status_not_set">تنظیم نشده</string>
+    <string name="default_sms_recommended">توصیه شده</string>
+    <string name="default_sms_app">برنامه پیش‌فرض پیامک</string>
+
+    <string name="btn_set_default_app">تنظیم برنامه پیش‌فرض</string>
+    <string name="btn_later">بعداً انجام می‌دهم</string>
+
+    <string name="msg_default_sms_set">برنامه شما به عنوان برنامه پیش‌فرض پیامک تنظیم شده است. ✅</string>
+    <string name="msg_default_sms_not_set">برای جلوگیری از دریافت دو نوتیفیکیشن، لطفاً این برنامه را به عنوان برنامه پیش‌فرض تنظیم کنید.</string>
+
+    <string name="warning_default_sms">💡 نکته: برای جلوگیری از دو نوتیفیکیشن، لطفاً از منو (⋯) گزینه \'تنظیم برنامه پیش‌فرض\' را انتخاب کنید</string>
+    <string name="menu_set_default_sms">تنظیم برنامه پیش‌فرض</string>
+    <string name="menu_is_default_sms">برنامه پیش‌فرض ✅</string>
 </resources>

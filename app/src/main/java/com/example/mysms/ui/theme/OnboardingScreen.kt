@@ -1,9 +1,9 @@
 package com.example.mysms.ui.theme
 
-
-
+import androidx.compose.runtime.mutableStateMapOf
+import android.provider.Telephony
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.filled.*
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -20,7 +20,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.Image
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,29 +40,17 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
+
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Email
+
+
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.*
+
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.CheckCircle
+
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Email
+
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -79,6 +67,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,20 +79,29 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.mysms.R
+
 import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 
 /**
+ * بررسی آیا برنامه به عنوان برنامه پیش‌فرض پیامک تنظیم شده است
+ */
+fun isDefaultSmsApp(context: Context): Boolean {
+    return context.packageName == Telephony.Sms.getDefaultSmsPackage(context)
+}
+
+
+/**
  * صفحه اصلی Onboarding Wizard برای درخواست مجوزها
  */
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
@@ -116,8 +114,29 @@ fun OnboardingScreen(
     var currentStep by remember { mutableIntStateOf(0) }
     var showWelcome by remember { mutableStateOf(true) }
 
-    // وضعیت مجوزها
-    val permissionStates = rememberPermissionStates(context)
+    // وضعیت real-time تمام مجوزها
+    val permissionsState = remember { mutableStateMapOf<String, Boolean>() }
+
+    // بروزرسانی وضعیت مجوزها
+    LaunchedEffect(currentStep) {
+        // لیست تمام مجوزهای مهم
+        val allPermissions = listOfNotNull(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_PHONE_STATE,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                Manifest.permission.POST_NOTIFICATIONS else null
+        )
+
+        // چک real-time وضعیت هر مجوز
+        allPermissions.forEach { permission ->
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context, permission
+            ) == PackageManager.PERMISSION_GRANTED
+            permissionsState[permission] = hasPermission
+        }
+    }
 
     // SharedPreferences برای پیگیری وضعیت onboarding
     val prefs = remember {
@@ -197,6 +216,16 @@ fun OnboardingScreen(
                 Manifest.permission.POST_NOTIFICATIONS else null,
             isRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         ),
+        // ============ مرحله جدید: برنامه پیش‌فرض پیامک ============
+        OnboardingStep(
+            title = "برنامه پیش‌فرض پیامک",
+            description = "برای جلوگیری از دریافت دو نوتیفیکیشن\nلطفاً این برنامه را به عنوان برنامه پیش‌فرض پیامک تنظیم کنید",
+            icon = Icons.Default.Star,
+            iconColor = Color(0xFFFFC107),
+            background = Color(0xFFFFF8E1),
+            permission = null,
+            isRequired = false
+        ),
         OnboardingStep(
             title = "آماده استفاده!",
             description = "تمام مراحل با موفقیت تکمیل شد\nاکنون می‌توانید از برنامه استفاده کنید",
@@ -205,6 +234,20 @@ fun OnboardingScreen(
             background = Color(0xFFF1F8E9)
         )
     )
+
+    // وضعیت مجوز مرحله فعلی
+    val currentStepData = steps[currentStep]
+    val currentHasPermission = currentStepData.permission?.let { permission ->
+        permissionsState[permission] ?: false
+    } ?: true
+
+    // آیا می‌تواند به مرحله بعد برود؟
+    val canGoNext = when {
+        currentStepData.isRequired && currentStepData.permission != null ->
+            currentHasPermission
+        else -> true
+    }
+
     Scaffold(
         topBar = {
             if (currentStep > 0) {
@@ -240,7 +283,7 @@ fun OnboardingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(steps[currentStep].background)
+                .background(currentStepData.background)
         ) {
             // انیمیشن بین مراحل
             AnimatedVisibility(
@@ -258,10 +301,11 @@ fun OnboardingScreen(
                 ) + fadeOut()
             ) {
                 OnboardingStepContent(
-                    step = steps[currentStep],
+                    step = currentStepData,
                     currentStep = currentStep,
                     totalSteps = steps.size,
-                    permissionStates = permissionStates,
+                    hasPermission = currentHasPermission,
+                    canGoNext = canGoNext,
                     onNext = {
                         if (currentStep < steps.size - 1) {
                             currentStep++
@@ -273,7 +317,7 @@ fun OnboardingScreen(
                     },
                     onPrev = { if (currentStep > 0) currentStep-- },
                     onSkip = {
-                        // رد کردن onboarding (فقط برای مراحل غیرضروری)
+                        // رد کردن onboarding
                         prefs.edit().putBoolean("onboarding_completed", true).apply()
                         onComplete()
                     }
@@ -287,7 +331,7 @@ fun OnboardingScreen(
                     totalSteps = steps.size,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp)
+                        .padding(bottom = 120.dp) // افزایش padding
                 )
             }
         }
@@ -362,15 +406,34 @@ fun OnboardingStepContent(
     step: OnboardingStep,
     currentStep: Int,
     totalSteps: Int,
-    permissionStates: PermissionStates,
+    hasPermission: Boolean,
+    canGoNext: Boolean,
     onNext: () -> Unit,
     onPrev: () -> Unit,
     onSkip: () -> Unit
 ) {
     val context = LocalContext.current
-    val hasPermission = step.permission?.let { permission ->
-        permissionStates.getPermissionState(permission)
-    } ?: true
+
+    // state برای کنترل auto-advance بعد از دادن مجوز
+    var shouldAutoAdvance by remember { mutableStateOf(false) }
+
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            // علامت‌گذاری برای auto-advance
+            shouldAutoAdvance = true
+        }
+    }
+
+    // LaunchedEffect برای auto-advance
+    LaunchedEffect(shouldAutoAdvance) {
+        if (shouldAutoAdvance) {
+            delay(500) // تاخیر 0.5 ثانیه
+            onNext()
+            shouldAutoAdvance = false // ریست
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -421,14 +484,33 @@ fun OnboardingStepContent(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // وضعیت مجوز (اگر مرحله مربوط به مجوز است)
+        // وضعیت مجوز یا برنامه پیش‌فرض
         if (step.permission != null) {
             PermissionStatusCard(
                 permission = step.permission,
                 isRequired = step.isRequired,
                 hasPermission = hasPermission,
-                onRequestPermission = { permissionStates.requestPermission(step.permission) },
+                onRequestPermission = {
+                    requestPermissionLauncher.launch(step.permission)
+                },
                 onOpenSettings = { openAppSettings(context) }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+        } else if (step.title == "برنامه پیش‌فرض پیامک") {
+            DefaultSmsAppStatusCard(
+                context = context, // اضافه کردن context
+                onOpenSettings = {
+                    try {
+                        val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+                        intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        openAppSettings(context)
+                    }
+                },
+                onSkip = {
+                    onNext()
+                }
             )
             Spacer(modifier = Modifier.height(24.dp))
         }
@@ -446,12 +528,13 @@ fun OnboardingStepContent(
                 Button(
                     onClick = onPrev,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        Icons.Filled.ArrowBack,
+                        Icons.Filled.ArrowForward,
                         contentDescription = "قبلی",
                         modifier = Modifier.size(18.dp)
                     )
@@ -464,7 +547,7 @@ fun OnboardingStepContent(
             // دکمه بعدی/شروع
             Button(
                 onClick = onNext,
-                enabled = if (step.isRequired && step.permission != null) hasPermission else true,
+                enabled = canGoNext,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (currentStep == totalSteps - 1)
                         Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
@@ -478,14 +561,13 @@ fun OnboardingStepContent(
                 if (currentStep < totalSteps - 1) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
-                        Icons.Filled.ArrowForward,  // یا Icons.Filled.NavigateNext
+                        Icons.Filled.ArrowBack,
                         contentDescription = "ادامه",
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
         }
-
         // دکمه رد کردن (فقط برای مراحل غیرضروری)
         if (!step.isRequired && step.permission != null && !hasPermission) {
             Spacer(modifier = Modifier.height(16.dp))
@@ -507,14 +589,26 @@ fun PermissionStatusCard(
     onRequestPermission: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val context = LocalContext.current
+
+    // وضعیت real-time مجوز
+    val currentPermissionState by remember(permission) {
+        derivedStateOf {
+            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    // ترکیب وضعیت ورودی و وضعیت real-time
+    val actualHasPermission = hasPermission || currentPermissionState
+
     val permissionName = getPermissionDisplayName(permission)
-    val statusText = if (hasPermission) "تأیید شده" else "تأیید نشده"
-    val statusColor = if (hasPermission) Color(0xFF4CAF50) else Color(0xFFF44336)
+    val statusText = if (actualHasPermission) "تأیید شده" else "تأیید نشده"
+    val statusColor = if (actualHasPermission) Color(0xFF4CAF50) else Color(0xFFF44336)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (hasPermission)
+            containerColor = if (actualHasPermission)
                 Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -557,7 +651,7 @@ fun PermissionStatusCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (!hasPermission) {
+            if (!actualHasPermission) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -584,10 +678,144 @@ fun PermissionStatusCard(
                         Text("تنظیمات")
                     }
                 }
+            } else {
+                // نمایش پیام تأیید شده
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF4CAF50).copy(alpha = 0.1f))
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = "تأیید شده",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "مجوز تأیید شده است",
+                            color = Color(0xFF4CAF50),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+
+/**
+ * کارت وضعیت برنامه پیش‌فرض پیامک
+ */
+@Composable
+fun DefaultSmsAppStatusCard(
+    context: Context, // اضافه کردن context به پارامترها
+    onOpenSettings: () -> Unit,
+    onSkip: () -> Unit = {}
+) {
+    val isDefaultSmsApp by remember {
+        derivedStateOf {
+            context.packageName == Telephony.Sms.getDefaultSmsPackage(context)
+        }
+    }
+
+    val statusText = if (isDefaultSmsApp) "تنظیم شده" else "تنظیم نشده"
+    val statusColor = if (isDefaultSmsApp) Color(0xFF4CAF50) else Color(0xFFFF9800)
+    val description = if (isDefaultSmsApp)
+        "برنامه شما به عنوان برنامه پیش‌فرض پیامک تنظیم شده است. ✅"
+    else
+        "برای جلوگیری از دریافت دو نوتیفیکیشن، لطفاً این برنامه را به عنوان برنامه پیش‌فرض تنظیم کنید."
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDefaultSmsApp)
+                Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "برنامه پیش‌فرض پیامک",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "توصیه شده",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(statusColor.copy(alpha = 0.1f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = statusText,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            if (!isDefaultSmsApp) {
+                Button(
+                    onClick = onOpenSettings,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "تنظیمات",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("تنظیم برنامه پیش‌فرض")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TextButton(
+                    onClick = onSkip,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("بعداً انجام می‌دهم")
+                }
+            }
+        }
+    }
+}
+
 
 /**
  * نشانگر مراحل
@@ -637,16 +865,46 @@ data class OnboardingStep(
 /**
  * مدیریت وضعیت مجوزها
  */
+/**
+ * مدیریت وضعیت مجوزها - نسخه بروز شده
+ */
 @Composable
 fun rememberPermissionStates(context: Context): PermissionStates {
-    val permissionStates = remember { mutableMapOf<String, Boolean>() }
+    val permissionStates = remember { mutableStateMapOf<String, Boolean>() }
+
+    // بررسی real-time وضعیت مجوزها
+    LaunchedEffect(Unit) {
+        while (true) {
+            // بررسی تمام مجوزهای مهم
+            val permissions = listOf(
+                Manifest.permission.READ_SMS,
+                Manifest.permission.RECEIVE_SMS,
+                Manifest.permission.READ_CONTACTS,
+                Manifest.permission.READ_PHONE_STATE,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                    Manifest.permission.POST_NOTIFICATIONS else null
+            ).filterNotNull()
+
+            permissions.forEach { permission ->
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context, permission
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (permissionStates[permission] != hasPermission) {
+                    permissionStates[permission] = hasPermission
+                }
+            }
+
+            delay(500) // بررسی هر نیم ثانیه
+        }
+    }
 
     // Launcher برای درخواست مجوزها
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        // وضعیت مجوزها در اینجا آپدیت می‌شود
-        // در عمل این از طریق بررسی مجدد در هر مرحله انجام می‌شود
+        // بلافاصله وضعیت را آپدیت کن
+        // این بخش در LaunchedEffect بالا هم آپدیت می‌شود
     }
 
     // Launcher برای درخواست چندگانه مجوزها
@@ -661,14 +919,10 @@ fun rememberPermissionStates(context: Context): PermissionStates {
     return remember {
         object : PermissionStates {
             override fun getPermissionState(permission: String): Boolean {
-                return permissionStates[permission] ?: run {
-                    val hasPermission = ContextCompat.checkSelfPermission(
-                        context,
-                        permission
-                    ) == PackageManager.PERMISSION_GRANTED
-                    permissionStates[permission] = hasPermission
-                    hasPermission
-                }
+                // همیشه از سیستم چک کن
+                return ContextCompat.checkSelfPermission(
+                    context, permission
+                ) == PackageManager.PERMISSION_GRANTED
             }
 
             override fun requestPermission(permission: String) {
@@ -681,7 +935,6 @@ fun rememberPermissionStates(context: Context): PermissionStates {
         }
     }
 }
-
 interface PermissionStates {
     fun getPermissionState(permission: String): Boolean
     fun requestPermission(permission: String)
