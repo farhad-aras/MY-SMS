@@ -28,6 +28,7 @@
     import androidx.compose.foundation.layout.*
     import androidx.compose.foundation.lazy.rememberLazyListState
     import androidx.compose.material.icons.Icons
+    import androidx.compose.material.icons.filled.NotificationsActive
     import androidx.compose.material.icons.filled.Refresh
     import androidx.compose.material.icons.filled.Star
     import androidx.compose.material3.*
@@ -113,6 +114,32 @@
             }
         }
 
+        fun startForegroundServiceIfNeeded() {
+            try {
+                Log.d("MainActivity", "🚀 Starting services...")
+
+                // 1. شروع JobScheduler (برای اندروید 5+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    SmsJobService.scheduleJob(this)
+                }
+
+                // 2. شروع Foreground Service (برای نمایش نوتیفیکیشن)
+                val hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                } else {
+                    true
+                }
+
+                if (hasNotificationPermission) {
+                    ForegroundSmsService.startService(this)
+                    Log.d("MainActivity", "✅ Services started")
+                }
+
+            } catch (e: Exception) {
+                Log.e("MainActivity", "❌ Error starting services: ${e.message}", e)
+            }
+        }
+
         // ==================== توابع بررسی برنامه پیش‌فرض ====================
 
         /**
@@ -127,31 +154,6 @@
          */
 
 
-        private fun startForegroundServiceIfNeeded() {
-            try {
-                Log.d("MainActivity", "🚀 Starting services...")
-    
-                // 1. شروع JobScheduler (برای اندروید 5+)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    SmsJobService.scheduleJob(this)
-                }
-    
-                // 2. شروع Foreground Service (برای نمایش نوتیفیکیشن)
-                val hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                } else {
-                    true
-                }
-    
-                if (hasNotificationPermission) {
-                    ForegroundSmsService.startService(this)
-                    Log.d("MainActivity", "✅ Services started")
-                }
-    
-            } catch (e: Exception) {
-                Log.e("MainActivity", "❌ Error starting services: ${e.message}", e)
-            }
-        }
     
         private fun stopForegroundServiceIfNeeded() {
             try {
@@ -266,7 +268,44 @@
     
         // ==================== مدیریت بازکردن از نوتیفیکیشن ====================
         val notificationPrefs = remember { context.getSharedPreferences("notification_prefs", Context.MODE_PRIVATE) }
-    
+
+// شروع سرویس‌ها
+        LaunchedEffect(Unit) {
+            delay(1000)
+            (context as? MainActivity)?.startForegroundServiceIfNeeded()
+        }
+
+// بررسی دسترسی Notification Listener
+        LaunchedEffect(Unit) {
+            delay(2000) // تاخیر ۲ ثانیه
+
+            val isNotificationAccessEnabled =
+                com.example.mysms.ui.theme.NotificationListener.isNotificationServiceEnabled(context)
+
+            if (!isNotificationAccessEnabled) {
+                // فقط یک بار هشدار بده
+                val prefs = context.getSharedPreferences("notification_access_prefs", Context.MODE_PRIVATE)
+                val hasShownWarning = prefs.getBoolean("has_shown_notification_warning", false)
+
+                if (!hasShownWarning) {
+                    delay(3000) // تاخیر بیشتر
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.app.AlertDialog.Builder(context)
+                            .setTitle("دسترسی اعلان‌ها")
+                            .setMessage("برای جلوگیری از نمایش دو نوتیفیکیشن (اپ شما + Google Messages)، لطفاً دسترسی به اعلان‌های سیستم را فعال کنید.\n\nمی‌توانید از طریق منوی برنامه این کار را انجام دهید.")
+                            .setPositiveButton("باشه") { dialog, _ ->
+                                dialog.dismiss()
+                                prefs.edit().putBoolean("has_shown_notification_warning", true).apply()
+                            }
+                            .setNegativeButton("بعداً") { dialog, _ ->
+                                dialog.dismiss()
+                            }
+                            .show()
+                    }
+                }
+            }
+        }
+
         // بررسی آیا باید چت باز شود؟
         val shouldOpenChat = remember {
             mutableStateOf(notificationPrefs.getBoolean("should_open_chat", false))
@@ -737,20 +776,33 @@
                                 }
                             )
 
+// آیتم دسترسی اعلان‌های سیستم
                             Divider()
-
-                            // آیتم تنظیمات (placeholder)
                             DropdownMenuItem(
-                                text = { Text("تنظیمات") },
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.NotificationsActive,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (com.example.mysms.ui.theme.NotificationListener.isNotificationServiceEnabled(context))
+                                                Color(0xFF4CAF50) else Color(0xFFFF9800)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            if (com.example.mysms.ui.theme.NotificationListener.isNotificationServiceEnabled(context))
+                                                "دسترسی اعلان‌ها ✅"
+                                            else
+                                                "فعال‌سازی دسترسی اعلان‌ها"
+                                        )
+                                    }
+                                },
                                 onClick = {
                                     showMenu = false
-                                    Toast.makeText(context, "به زودی...", Toast.LENGTH_SHORT).show()
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = null
-                                    )
+                                    com.example.mysms.ui.theme.NotificationListener.openNotificationSettings(context)
+                                    Toast.makeText(context, "لطفاً در تنظیمات دسترسی را فعال کنید", Toast.LENGTH_LONG).show()
                                 }
                             )
                         }

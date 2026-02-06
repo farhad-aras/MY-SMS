@@ -161,7 +161,7 @@ fun OnboardingScreen(
         return
     }
 
-    // مراحل onboarding
+// مراحل onboarding
     val steps = listOf(
         OnboardingStep(
             title = "خوش آمدید به پیام‌رسان",
@@ -216,7 +216,17 @@ fun OnboardingScreen(
                 Manifest.permission.POST_NOTIFICATIONS else null,
             isRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         ),
-        // ============ مرحله جدید: برنامه پیش‌فرض پیامک ============
+        // ============ مرحله ۷: دسترسی به اعلان‌های سیستم ============
+        OnboardingStep(
+            title = "دسترسی به اعلان‌های سیستم",
+            description = "برای جلوگیری از نمایش دو نوتیفیکیشن\nلطفاً دسترسی به اعلان‌های سیستم را فعال کنید",
+            icon = Icons.Filled.NotificationsActive,
+            iconColor = Color(0xFF9C27B0),
+            background = Color(0xFFF3E5F5),
+            permission = null,
+            isRequired = false
+        ),
+        // ============ مرحله ۸: برنامه پیش‌فرض پیامک ============
         OnboardingStep(
             title = "برنامه پیش‌فرض پیامک",
             description = "برای جلوگیری از دریافت دو نوتیفیکیشن\nلطفاً این برنامه را به عنوان برنامه پیش‌فرض پیامک تنظیم کنید",
@@ -226,6 +236,7 @@ fun OnboardingScreen(
             permission = null,
             isRequired = false
         ),
+        // ============ مرحله ۹: تکمیل ============
         OnboardingStep(
             title = "آماده استفاده!",
             description = "تمام مراحل با موفقیت تکمیل شد\nاکنون می‌توانید از برنامه استفاده کنید",
@@ -234,7 +245,6 @@ fun OnboardingScreen(
             background = Color(0xFFF1F8E9)
         )
     )
-
     // وضعیت مجوز مرحله فعلی
     val currentStepData = steps[currentStep]
     val currentHasPermission = currentStepData.permission?.let { permission ->
@@ -484,7 +494,7 @@ fun OnboardingStepContent(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // وضعیت مجوز یا برنامه پیش‌فرض
+// وضعیت مجوز یا برنامه پیش‌فرض
         if (step.permission != null) {
             PermissionStatusCard(
                 permission = step.permission,
@@ -498,7 +508,7 @@ fun OnboardingStepContent(
             Spacer(modifier = Modifier.height(24.dp))
         } else if (step.title == "برنامه پیش‌فرض پیامک") {
             DefaultSmsAppStatusCard(
-                context = context, // اضافه کردن context
+                context = context,
                 onOpenSettings = {
                     try {
                         val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
@@ -507,6 +517,17 @@ fun OnboardingStepContent(
                     } catch (e: Exception) {
                         openAppSettings(context)
                     }
+                },
+                onSkip = {
+                    onNext()
+                }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+        } else if (step.title == "دسترسی به اعلان‌های سیستم") {
+            NotificationAccessStatusCard(
+                context = context,
+                onOpenSettings = {
+                    com.example.mysms.ui.theme.NotificationListener.openNotificationSettings(context)
                 },
                 onSkip = {
                     onNext()
@@ -997,8 +1018,115 @@ fun shouldShowOnboarding(context: Context): Boolean {
     } else {
         true
     }
+
+
+
 }
 
+/**
+ * کارت وضعیت دسترسی Notification Listener
+ */
+@Composable
+fun NotificationAccessStatusCard(
+    context: Context,
+    onOpenSettings: () -> Unit,
+    onSkip: () -> Unit = {}
+) {
+    val isNotificationAccessEnabled = remember {
+        derivedStateOf {
+            NotificationListener.isNotificationServiceEnabled(context)
+        }
+    }
+
+    val statusText = if (isNotificationAccessEnabled.value) "فعال شده" else "غیرفعال"
+    val statusColor = if (isNotificationAccessEnabled.value) Color(0xFF4CAF50) else Color(0xFFFF9800)
+    val description = if (isNotificationAccessEnabled.value)
+        "دسترسی به اعلان‌های سیستم فعال است. ✅\nنوتیفیکیشن‌های تکراری به طور خودکار حذف می‌شوند."
+    else
+        "برای جلوگیری از نمایش دو نوتیفیکیشن (اپ شما + Google Messages)، لطفاً دسترسی به اعلان‌های سیستم را فعال کنید."
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isNotificationAccessEnabled.value)
+                Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "دسترسی اعلان‌های سیستم",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "توصیه شده",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(statusColor.copy(alpha = 0.1f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = statusText,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            if (!isNotificationAccessEnabled.value) {
+                Button(
+                    onClick = onOpenSettings,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "تنظیمات",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("فعال‌سازی دسترسی اعلان‌ها")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TextButton(
+                    onClick = onSkip,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("بعداً انجام می‌دهم")
+                }
+            }
+        }
+    }
+}
 /**
  * ریست کردن وضعیت onboarding
  */

@@ -1,5 +1,10 @@
 package com.example.mysms.ui.theme
 
+import android.graphics.Color
+import android.net.Uri
+import android.provider.ContactsContract
+import android.provider.Settings
+import android.provider.Telephony
 import android.app.*
 import android.content.Context
 import android.content.Intent
@@ -184,7 +189,51 @@ class ForegroundSmsService : Service() {
      */
     fun showNewMessageNotification(address: String, body: String) {
         try {
-            // ایجاد کانال جداگانه برای نوتیفیکیشن‌های پیام
+            // ۱. بررسی برنامه پیش‌فرض
+            val isDefaultApp = try {
+                packageName == Telephony.Sms.getDefaultSmsPackage(this)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ خطا در بررسی برنامه پیش‌فرض", e)
+                false
+            }
+
+            // ۲. بررسی NotificationListener
+            val isNotificationListenerEnabled = try {
+                val packageName = packageName
+                val flat = Settings.Secure.getString(
+                    contentResolver,
+                    "enabled_notification_listeners"
+                )
+                flat?.contains(packageName) == true
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ خطا در بررسی NotificationListener", e)
+                false
+            }
+
+            // ۳. منطق تصمیم‌گیری
+            when {
+                // اگر برنامه پیش‌فرض است → نوتیفیکیشن نده (سیستم خودش می‌دهد)
+                isDefaultApp -> {
+                    Log.d(TAG, "✅ برنامه پیش‌فرض است - نوتیفیکیشن نمایش داده نمی‌شود")
+                    return
+                }
+
+                // اگر NotificationListener فعال است → نوتیفیکیشن نده (خودمان حذف می‌کنیم)
+                isNotificationListenerEnabled -> {
+                    Log.d(TAG, "✅ NotificationListener فعال است - نوتیفیکیشن نمایش داده نمی‌شود")
+                    return
+                }
+
+                // در غیر این صورت → نوتیفیکیشن بده
+                else -> {
+                    Log.d(TAG, "📢 نمایش نوتیفیکیشن (برنامه پیش‌فرض نیست و NotificationListener فعال نیست)")
+                }
+            }
+
+            // ۴. دریافت نام مخاطب
+            val displayName = getContactName(address) ?: address
+
+            // ۵. ایجاد کانال نوتیفیکیشن
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val messageChannel = NotificationChannel(
                     "sms_message_channel",
@@ -193,18 +242,22 @@ class ForegroundSmsService : Service() {
                 ).apply {
                     description = "پیام‌های SMS دریافتی"
                     enableLights(true)
+                    lightColor = Color.BLUE
                     enableVibration(true)
+                    vibrationPattern = longArrayOf(100, 200, 100, 200)
                     lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                    setSound(null, null) // بدون صدا - فقط ویبره
                 }
                 notificationManager.createNotificationChannel(messageChannel)
             }
 
-            // Intent برای باز کردن مستقیم چت
+            // ۶. Intent برای باز کردن مستقیم چت
             val chatIntent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 putExtra("open_chat", true)
                 putExtra("contact_address", address)
                 putExtra("notification_clicked", true)
+                putExtra("contact_name", displayName)
             }
 
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -223,24 +276,73 @@ class ForegroundSmsService : Service() {
                 )
             }
 
+            // ۷. ایجاد Action برای پاسخ سریع
+            val replyIntent = Intent(this, SmsReceiver::class.java).apply {
+                action = "REPLY_ACTION"
+                putExtra("address", address)
+                putExtra("message_id", "temp_${System.currentTimeMillis()}")
+            }
+
+            val replyPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.getBroadcast(
+                    this,
+                    address.hashCode() + 1,
+                    replyIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            } else {
+                PendingIntent.getBroadcast(
+                    this,
+                    address.hashCode() + 1,
+                    replyIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            }
+
+            // ۸. ساخت نوتیفیکیشن
             val notification = NotificationCompat.Builder(this, "sms_message_channel")
-                .setContentTitle("پیام جدید")
-                .setContentText("از: $address")
+                .setContentTitle("📩 از: $displayName")
+                .setContentText(body.take(50))
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
                 .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+                .setDefaults(NotificationCompat.DEFAULT_VIBRATE) // فقط ویبره
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .addAction(
+                    android.R.drawable.ic_menu_send,
+                    "پاسخ",
+                    replyPendingIntent
+                )
+                .setWhen(System.currentTimeMillis())
+                .setShowWhen(true)
                 .build()
 
+            // ۹. نمایش نوتیفیکیشن
             notificationManager.notify(address.hashCode() and 0x7FFFFFFF, notification)
-            Log.d(TAG, "📢 Notification shown for: $address")
+            Log.d(TAG, "✅ نوتیفیکیشن نمایش داده شد برای: $displayName")
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error showing notification: ${e.message}")
+            Log.e(TAG, "❌ خطا در نمایش نوتیفیکیشن: ${e.message}")
+        }
+    }
+
+    // تابع کمکی برای دریافت نام مخاطب
+    private fun getContactName(phoneNumber: String): String? {
+        return try {
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+            contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getString(0)
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ خطا در دریافت نام مخاطب", e)
+            null
         }
     }
 }

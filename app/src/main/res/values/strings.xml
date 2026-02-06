@@ -83,4 +83,21 @@
     <string name="warning_default_sms">💡 نکته: برای جلوگیری از دو نوتیفیکیشن، لطفاً از منو (⋯) گزینه \'تنظیم برنامه پیش‌فرض\' را انتخاب کنید</string>
     <string name="menu_set_default_sms">تنظیم برنامه پیش‌فرض</string>
     <string name="menu_is_default_sms">برنامه پیش‌فرض ✅</string>
+
+    <!-- Notification Listener Strings -->
+    <string name="onboarding_notification_access">دسترسی به اعلان‌های سیستم</string>
+    <string name="onboarding_notification_access_desc">برای جلوگیری از نمایش دو نوتیفیکیشن\nلطفاً دسترسی به اعلان‌های سیستم را فعال کنید</string>
+
+    <string name="notification_access_status_enabled">فعال شده</string>
+    <string name="notification_access_status_disabled">غیرفعال</string>
+    <string name="notification_access_recommended">توصیه شده</string>
+    <string name="notification_access_system">دسترسی اعلان‌های سیستم</string>
+
+    <string name="msg_notification_access_enabled">دسترسی به اعلان‌های سیستم فعال است. ✅\nنوتیفیکیشن‌های تکراری به طور خودکار حذف می‌شوند.</string>
+    <string name="msg_notification_access_disabled">برای جلوگیری از نمایش دو نوتیفیکیشن (اپ شما + Google Messages)، لطفاً دسترسی به اعلان‌های سیستم را فعال کنید.</string>
+
+    <string name="btn_enable_notification_access">فعال‌سازی دسترسی اعلان‌ها</string>
+    <string name="btn_notification_access_later">بعداً انجام می‌دهم</string>
+
+    <string name="notification_listener_guide">📋 راهنما:\n1. به تنظیمات بروید\n2. \"دسترسی به اعلان‌ها\" را پیدا کنید\n3. \"MySMS\" را فعال کنید\n4. دکمه بازگشت را بزنید</string>
 </resources>
