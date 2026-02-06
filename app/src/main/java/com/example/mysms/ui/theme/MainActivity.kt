@@ -15,6 +15,7 @@
     import kotlinx.coroutines.launch
     import androidx.compose.runtime.rememberCoroutineScope
     import android.Manifest
+    import android.app.NotificationManager
     import android.content.Context
     import android.content.pm.PackageManager
     import android.os.Build
@@ -30,6 +31,7 @@
     import androidx.compose.material.icons.Icons
     import androidx.compose.material.icons.filled.NotificationsActive
     import androidx.compose.material.icons.filled.Refresh
+    import androidx.compose.material.icons.filled.Reply
     import androidx.compose.material.icons.filled.Star
     import androidx.compose.material3.*
     import androidx.compose.runtime.*
@@ -67,6 +69,28 @@
     
             // بررسی Intent برای بازشدن از نوتیفیکیشن
             handleNotificationIntent(intent)
+
+            // بررسی Intent برای پاسخ سریع
+            val quickReplyTest = intent.getBooleanExtra("quick_reply_test", false)
+            val quickReply = intent.getBooleanExtra("quick_reply", false)
+            val replyAddress = intent.getStringExtra("address")
+            val notificationId = intent.getIntExtra("notification_id", 0)
+
+            if ((quickReplyTest || quickReply) && !replyAddress.isNullOrEmpty()) {
+                Log.d("MainActivity", "💬 دریافت درخواست پاسخ سریع برای: $replyAddress")
+
+                // ذخیره در SharedPreferences برای استفاده در Composable
+                val prefs = getSharedPreferences("quick_reply_prefs", Context.MODE_PRIVATE)
+                prefs.edit().apply {
+                    putBoolean("show_quick_reply_dialog", true)
+                    putString("reply_address", replyAddress)
+                    putInt("notification_id", notificationId)
+                    apply()
+                }
+
+                // ریفرش صفحه
+                recreate()
+            }
     
             setContent {
                 MaterialTheme {
@@ -137,6 +161,35 @@
 
             } catch (e: Exception) {
                 Log.e("MainActivity", "❌ Error starting services: ${e.message}", e)
+            }
+        }
+
+
+
+        /**
+         * ارسال پاسخ سریع
+         */
+        private fun sendQuickReply(context: Context, address: String, message: String, notificationId: Int) {
+            try {
+                Log.d("MainActivity", "📤 ارسال پاسخ سریع به $address: $message")
+
+                // پیدا کردن ViewModel برای ارسال پیام
+                val application = context.applicationContext as android.app.Application
+                val vm = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+                    .create(com.example.mysms.viewmodel.HomeViewModel::class.java)
+
+                // ارسال پیام
+                vm.sendSms(address, message, -1) // استفاده از سیم‌کارت پیش‌فرض
+
+                // حذف نوتیفیکیشن
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(notificationId)
+
+                Log.d("MainActivity", "✅ پاسخ سریع ارسال شد")
+
+            } catch (e: Exception) {
+                Log.e("MainActivity", "❌ خطا در ارسال پاسخ سریع", e)
+                Toast.makeText(context, "❌ خطا در ارسال پاسخ", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -258,8 +311,16 @@
     
         // ==================== متغیرهای منو و تنظیمات ====================
         var showMenu by remember { mutableStateOf(false) }
+        // State برای دیالوگ پاسخ سریع
+        var showQuickReplyDialog by remember { mutableStateOf(false) }
+        var quickReplyAddress by remember { mutableStateOf("") }
+        var quickReplyNotificationId by remember { mutableIntStateOf(0) }
+        var quickReplyMessage by remember { mutableStateOf("") }
+
         var showSettingsScreen by remember { mutableStateOf(false) }
         // ====================  ====================
+
+
 
         // ==================== حالت نمایش Onboarding ====================
         var shouldShowOnboarding by remember {
@@ -268,6 +329,8 @@
     
         // ==================== مدیریت بازکردن از نوتیفیکیشن ====================
         val notificationPrefs = remember { context.getSharedPreferences("notification_prefs", Context.MODE_PRIVATE) }
+
+
 
 // شروع سرویس‌ها
         LaunchedEffect(Unit) {
@@ -316,7 +379,28 @@
     
         // ==================== ذخیره وضعیت UI برای کنترل Back ====================
         val uiStatePrefs = remember { context.getSharedPreferences("ui_state", Context.MODE_PRIVATE) }
-    
+
+        // ==================== مدیریت پاسخ سریع ====================
+        val quickReplyPrefs = remember { context.getSharedPreferences("quick_reply_prefs", Context.MODE_PRIVATE) }
+
+
+        // بررسی نمایش دیالوگ پاسخ سریع از Intent
+        LaunchedEffect(Unit) {
+            val shouldShow = quickReplyPrefs.getBoolean("show_quick_reply_dialog", false)
+            val address = quickReplyPrefs.getString("reply_address", "")
+            val notifId = quickReplyPrefs.getInt("notification_id", 0)
+
+            if (shouldShow && !address.isNullOrEmpty()) {
+                showQuickReplyDialog = true
+                quickReplyAddress = address
+                quickReplyNotificationId = notifId
+
+                // پاک کردن فلگ
+                quickReplyPrefs.edit().clear().apply()
+            }
+        }
+
+
         // ذخیره وضعیت چت
         LaunchedEffect(selectedContact) {
             uiStatePrefs.edit().putBoolean("is_in_chat", selectedContact != null).apply()
@@ -805,6 +889,60 @@
                                     Toast.makeText(context, "لطفاً در تنظیمات دسترسی را فعال کنید", Toast.LENGTH_LONG).show()
                                 }
                             )
+
+// آیتم تست پاسخ سریع
+                            var showTestDialog by remember { mutableStateOf(false) }
+
+                            Divider()
+                            DropdownMenuItem(
+                                text = { Text("تست پاسخ سریع") },
+                                onClick = {
+                                    showMenu = false
+                                    showTestDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Reply,
+                                        contentDescription = null
+                                    )
+                                }
+                            )
+
+// دیالوگ تست پاسخ سریع
+                            if (showTestDialog) {
+                                androidx.compose.material3.AlertDialog(
+                                    onDismissRequest = { showTestDialog = false },
+                                    title = { Text("تست پاسخ سریع") },
+                                    text = { Text("آیا می‌خواهید پاسخ سریع را تست کنید؟") },
+                                    confirmButton = {
+                                        androidx.compose.material3.TextButton(
+                                            onClick = {
+                                                showTestDialog = false
+                                                // ایجاد Intent برای پاسخ سریع
+                                                val testAddress = "09123456789"
+                                                val testNotificationId = testAddress.hashCode() and 0x7FFFFFFF
+
+                                                val replyIntent = android.content.Intent(context, MainActivity::class.java).apply {
+                                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                                    putExtra("quick_reply_test", true)
+                                                    putExtra("address", testAddress)
+                                                    putExtra("notification_id", testNotificationId)
+                                                }
+                                                context.startActivity(replyIntent)
+                                            }
+                                        ) {
+                                            Text("بله")
+                                        }
+                                    },
+                                    dismissButton = {
+                                        androidx.compose.material3.TextButton(
+                                            onClick = { showTestDialog = false }
+                                        ) {
+                                            Text("خیر")
+                                        }
+                                    }
+                                )
+                            }
                         }
 
                     }
@@ -972,6 +1110,70 @@
                     // *** تغییر: پاس دادن خود key
                     refreshKey = listRefreshKey
                 )
+
+// دیالوگ پاسخ سریع
+                if (showQuickReplyDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showQuickReplyDialog = false },
+                        title = { Text("💬 پاسخ سریع به $quickReplyAddress") },
+                        text = {
+                            Column {
+                                Text("پیام خود را وارد کنید:", modifier = Modifier.padding(bottom = 8.dp))
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = quickReplyMessage,
+                                    onValueChange = { quickReplyMessage = it },
+                                    placeholder = { Text("متن پیام...") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = false,
+                                    maxLines = 3
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.Button(
+                                onClick = {
+                                    if (quickReplyMessage.isNotEmpty()) {
+                                        // ارسال پیام
+                                        val defaultSimId = when(selectedTab) {
+                                            0 -> sim1Id ?: -1
+                                            1 -> sim2Id ?: -1
+                                            else -> -1
+                                        }
+
+                                        if (defaultSimId != -1) {
+                                            vm.sendSms(quickReplyAddress, quickReplyMessage, defaultSimId)
+                                        } else {
+                                            vm.sendSms(quickReplyAddress, quickReplyMessage, -1)
+                                        }
+
+                                        // حذف نوتیفیکیشن
+                                        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                        notificationManager.cancel(quickReplyNotificationId)
+
+                                        android.widget.Toast.makeText(context, "✅ پاسخ ارسال شد", android.widget.Toast.LENGTH_SHORT).show()
+                                        showQuickReplyDialog = false
+                                        quickReplyMessage = ""
+                                    } else {
+                                        android.widget.Toast.makeText(context, "لطفاً متن پیام را وارد کنید", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                enabled = quickReplyMessage.isNotEmpty()
+                            ) {
+                                Text("📤 ارسال")
+                            }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(
+                                onClick = {
+                                    showQuickReplyDialog = false
+                                    quickReplyMessage = ""
+                                }
+                            ) {
+                                Text("لغو")
+                            }
+                        }
+                    )
+                }
             }
         }
 

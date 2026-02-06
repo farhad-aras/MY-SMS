@@ -100,4 +100,31 @@
     <string name="btn_notification_access_later">بعداً انجام می‌دهم</string>
 
     <string name="notification_listener_guide">📋 راهنما:\n1. به تنظیمات بروید\n2. \"دسترسی به اعلان‌ها\" را پیدا کنید\n3. \"MySMS\" را فعال کنید\n4. دکمه بازگشت را بزنید</string>
+
+    <!-- نوتیفیکیشن Actionها -->
+    <string name="notification_action_copy">📋 کپی کد</string>
+    <string name="notification_action_reply">💬 پاسخ</string>
+    <string name="notification_action_read">✅ خوانده شد</string>
+    <string name="notification_action_open">📖 باز کردن</string>
+
+    <!-- نوتیفیکیشن کد تأیید -->
+    <string name="notification_verification_title">🔐 کد تأیید از %s</string>
+    <string name="notification_verification_text">کد: %s</string>
+
+    <!-- نوتیفیکیشن پیام معمولی -->
+    <string name="notification_message_title">📩 از: %s</string>
+    <string name="notification_message_text">%s</string>
+
+    <!-- دیالوگ پاسخ سریع -->
+    <string name="quick_reply_dialog_title">💬 پاسخ سریع به %s</string>
+    <string name="quick_reply_dialog_hint">متن پیام...</string>
+    <string name="quick_reply_dialog_send">📤 ارسال</string>
+    <string name="quick_reply_dialog_cancel">لغو</string>
+
+    <!-- پیام‌های Toast -->
+    <string name="toast_code_copied">✅ کد کپی شد: %s</string>
+    <string name="toast_reply_sent">✅ پاسخ ارسال شد</string>
+    <string name="toast_message_read">✅ پیام خوانده شد</string>
+    <string name="toast_enter_message">لطفاً متن پیام را وارد کنید</string>
+    <string name="toast_reply_error">❌ خطا در ارسال پاسخ</string>
 </resources>

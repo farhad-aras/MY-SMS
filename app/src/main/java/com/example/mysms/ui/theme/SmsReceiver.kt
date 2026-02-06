@@ -122,11 +122,36 @@ class SmsReceiver : BroadcastReceiver() {
                     saveToDatabase(context, smsList)
                     Log.d("SmsReceiver", "✅ Successfully saved ${smsList.size} SMS to database")
 
-                    // نمایش نوتیفیکیشن برای هر پیام
-                    smsList.forEach { sms ->
-                        // ============ تغییر مهم اینجا ============
-                        showNotificationAlways(context, sms)
+                    // ============ نمایش نوتیفیکیشن بلافاصله ============
+                    // برای اولین پیام (معمولاً کافی است)
+                    val firstSms = smsList.first()
+                    try {
+                        val address = firstSms.address
+                        val body = firstSms.body
+
+                        Log.d("SmsReceiver", "📨 نمایش نوتیفیکیشن برای: $address")
+
+                        // شروع سرویس برای نمایش نوتیفیکیشن
+                        val serviceIntent = Intent(context, ForegroundSmsService::class.java)
+                        serviceIntent.putExtra("show_notification", true)
+                        serviceIntent.putExtra("address", address)
+                        serviceIntent.putExtra("body", body)
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(serviceIntent)
+                        } else {
+                            context.startService(serviceIntent)
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن", e)
                     }
+                    // ============ پایان نمایش نوتیفیکیشن ============
+
+                    // نمایش نوتیفیکیشن برای هر پیام (روش قدیمی برای backup)
+                /*    smsList.forEach { sms ->
+                        showNotificationAlways(context, sms)
+                    }*/
                 }
 
             } catch (e: Exception) {
@@ -180,10 +205,10 @@ class SmsReceiver : BroadcastReceiver() {
                     Log.d("SmsReceiver", "✅ Successfully saved ${smsList.size} legacy SMS")
 
                     // نمایش نوتیفیکیشن برای هر پیام
-                    smsList.forEach { sms ->
+                /*    smsList.forEach { sms ->
                         // ============ تغییر مهم اینجا ============
                         showNotificationAlways(context, sms)
-                    }
+                    }*/
                 }
 
             } catch (e: Exception) {
@@ -279,7 +304,7 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     // ==================== تابع بهبودیافته نوتیفیکیشن ====================
-    private fun showNotificationAlways(context: Context, sms: SmsEntity) {
+  /*  private fun showNotificationAlways(context: Context, sms: SmsEntity) {
         try {
             // ============ تغییر مهم: استفاده از Foreground Service ============
             // اگر سرویس foreground در حال اجرا باشد، از آن استفاده کن
@@ -309,7 +334,7 @@ class SmsReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             Log.e("SmsReceiver", "❌ Error showing notification: ${e.message}", e)
         }
-    }
+    }*/
 
     private fun showNewMessageNotification(context: Context, sms: SmsEntity) {
         try {

@@ -100,6 +100,8 @@
 
         </activity>
 
+
+
         <!-- Receiver برای دریافت پیام‌ها -->
         <receiver
             android:name=".ui.theme.SmsReceiver"
@@ -112,6 +114,18 @@
                 <action android:name="android.provider.Telephony.SMS_DELIVER" />
             </intent-filter>
 
+        </receiver>
+
+        <!-- Receiver برای Actionهای نوتیفیکیشن -->
+        <receiver
+            android:name=".ui.theme.NotificationActionReceiver"
+            android:exported="false"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="COPY_CODE_ACTION" />
+                <action android:name="QUICK_REPLY_ACTION" />
+                <action android:name="MARK_READ_ACTION" />
+            </intent-filter>
         </receiver>
 
         <!-- سرویس پس‌زمینه ۳۰ ثانیه‌ای -->
