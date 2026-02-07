@@ -1,6 +1,8 @@
 package com.example.mysms.ui.theme
 
 
+import com.example.mysms.ui.theme.NotificationManager as ActionNotificationManager
+import androidx.core.app.RemoteInput
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -16,7 +18,6 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import com.example.mysms.R
 import kotlinx.coroutines.*
@@ -311,6 +312,11 @@ class ForegroundSmsService : Service() {
                 putExtra("address", address)
             }
 
+// دکمه خوانده شده برای کدهای تأیید
+            val markReadPendingIntent = ActionNotificationManager.createMarkAsReadPendingIntent(
+                this, address, address.hashCode() and 0x7FFFFFFF
+            )
+
             val copyPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 PendingIntent.getBroadcast(
                     this,
@@ -369,6 +375,11 @@ class ForegroundSmsService : Service() {
                     android.R.drawable.ic_menu_save,
                     "📋 کپی کد",
                     copyPendingIntent
+                )
+                .addAction(
+                    android.R.drawable.ic_menu_view,
+                    "✅ خوانده شد",
+                    markReadPendingIntent
                 )
                 .addAction(
                     android.R.drawable.ic_menu_view,
@@ -438,7 +449,12 @@ class ForegroundSmsService : Service() {
                 )
             }
 
-            // Intent برای پاسخ سریع
+// ایجاد RemoteInput برای دریافت پاسخ از نوتیفیکیشن
+            val remoteInput = RemoteInput.Builder(ActionNotificationManager.KEY_REPLY)
+                .setLabel("پاسخ خود را وارد کنید")
+                .build()
+
+// Intent برای پاسخ سریع
             val replyIntent = Intent(this, NotificationActionReceiver::class.java).apply {
                 action = "QUICK_REPLY_ACTION"
                 putExtra("address", address)
@@ -446,12 +462,22 @@ class ForegroundSmsService : Service() {
             }
 
             val replyPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.getBroadcast(
-                    this,
-                    address.hashCode() + 1,
-                    replyIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // برای اندروید 12+ و RemoteInput باید از FLAG_MUTABLE استفاده شود
+                    PendingIntent.getBroadcast(
+                        this,
+                        address.hashCode() + 1,
+                        replyIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                    )
+                } else {
+                    PendingIntent.getBroadcast(
+                        this,
+                        address.hashCode() + 1,
+                        replyIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                }
             } else {
                 PendingIntent.getBroadcast(
                     this,
@@ -461,6 +487,16 @@ class ForegroundSmsService : Service() {
                 )
             }
 
+// ایجاد Action با RemoteInput
+            val replyAction = NotificationCompat.Action.Builder(
+                android.R.drawable.ic_menu_send, // استفاده از android.R به جای R
+                "💬 پاسخ",
+                replyPendingIntent
+            )
+                .addRemoteInput(remoteInput)
+                .setAllowGeneratedReplies(true)
+                .build()
+
             // Intent برای علامت‌گذاری به عنوان خوانده شده
             val markReadIntent = Intent(this, NotificationActionReceiver::class.java).apply {
                 action = "MARK_READ_ACTION"
@@ -469,12 +505,22 @@ class ForegroundSmsService : Service() {
             }
 
             val markReadPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.getBroadcast(
-                    this,
-                    address.hashCode() + 2,
-                    markReadIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // برای اندروید 12+ باید از FLAG_MUTABLE استفاده شود
+                    PendingIntent.getBroadcast(
+                        this,
+                        address.hashCode() + 2,
+                        markReadIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                    )
+                } else {
+                    PendingIntent.getBroadcast(
+                        this,
+                        address.hashCode() + 2,
+                        markReadIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                }
             } else {
                 PendingIntent.getBroadcast(
                     this,
@@ -496,11 +542,7 @@ class ForegroundSmsService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-                .addAction(
-                    android.R.drawable.ic_menu_send,
-                    "💬 پاسخ",
-                    replyPendingIntent
-                )
+                .addAction(replyAction) // استفاده از replyAction که شامل RemoteInput است
                 .addAction(
                     android.R.drawable.ic_menu_view,
                     "✅ خوانده شد",

@@ -70,26 +70,39 @@
             // بررسی Intent برای بازشدن از نوتیفیکیشن
             handleNotificationIntent(intent)
 
-            // بررسی Intent برای پاسخ سریع
-            val quickReplyTest = intent.getBooleanExtra("quick_reply_test", false)
-            val quickReply = intent.getBooleanExtra("quick_reply", false)
+// بررسی Intent برای پاسخ سریع از NotificationActionReceiver
+            val showQuickReplyDialog = intent.getBooleanExtra("show_quick_reply_dialog", false)
             val replyAddress = intent.getStringExtra("address")
             val notificationId = intent.getIntExtra("notification_id", 0)
+            val fromNotification = intent.getBooleanExtra("from_notification", false)
 
-            if ((quickReplyTest || quickReply) && !replyAddress.isNullOrEmpty()) {
-                Log.d("MainActivity", "💬 دریافت درخواست پاسخ سریع برای: $replyAddress")
+// همچنین برای سازگاری با نسخه قدیمی
+            val quickReply = intent.getBooleanExtra("quick_reply", false)
+            val quickReplyTest = intent.getBooleanExtra("quick_reply_test", false)
+
+            if ((showQuickReplyDialog || fromNotification || quickReply || quickReplyTest)
+                && !replyAddress.isNullOrEmpty()) {
+
+                Log.d("MainActivity", "💬 دریافت درخواست پاسخ سریع برای: $replyAddress (notificationId: $notificationId)")
+
+                // محاسبه notificationId اگر 0 بود
+                val actualNotificationId = if (notificationId == 0) {
+                    replyAddress.hashCode() and 0x7FFFFFFF
+                } else {
+                    notificationId
+                }
 
                 // ذخیره در SharedPreferences برای استفاده در Composable
                 val prefs = getSharedPreferences("quick_reply_prefs", Context.MODE_PRIVATE)
                 prefs.edit().apply {
                     putBoolean("show_quick_reply_dialog", true)
                     putString("reply_address", replyAddress)
-                    putInt("notification_id", notificationId)
+                    putInt("notification_id", actualNotificationId)
                     apply()
                 }
 
-                // ریفرش صفحه
-                recreate()
+                // لاگ برای دیباگ
+                Log.d("MainActivity", "💾 Saved to prefs: address=$replyAddress, id=$actualNotificationId")
             }
     
             setContent {
@@ -164,34 +177,6 @@
             }
         }
 
-
-
-        /**
-         * ارسال پاسخ سریع
-         */
-        private fun sendQuickReply(context: Context, address: String, message: String, notificationId: Int) {
-            try {
-                Log.d("MainActivity", "📤 ارسال پاسخ سریع به $address: $message")
-
-                // پیدا کردن ViewModel برای ارسال پیام
-                val application = context.applicationContext as android.app.Application
-                val vm = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(application)
-                    .create(com.example.mysms.viewmodel.HomeViewModel::class.java)
-
-                // ارسال پیام
-                vm.sendSms(address, message, -1) // استفاده از سیم‌کارت پیش‌فرض
-
-                // حذف نوتیفیکیشن
-                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancel(notificationId)
-
-                Log.d("MainActivity", "✅ پاسخ سریع ارسال شد")
-
-            } catch (e: Exception) {
-                Log.e("MainActivity", "❌ خطا در ارسال پاسخ سریع", e)
-                Toast.makeText(context, "❌ خطا در ارسال پاسخ", Toast.LENGTH_SHORT).show()
-            }
-        }
 
         // ==================== توابع بررسی برنامه پیش‌فرض ====================
 
@@ -384,7 +369,7 @@
         val quickReplyPrefs = remember { context.getSharedPreferences("quick_reply_prefs", Context.MODE_PRIVATE) }
 
 
-        // بررسی نمایش دیالوگ پاسخ سریع از Intent
+// بررسی نمایش دیالوگ پاسخ سریع از Intent
         LaunchedEffect(Unit) {
             val shouldShow = quickReplyPrefs.getBoolean("show_quick_reply_dialog", false)
             val address = quickReplyPrefs.getString("reply_address", "")
