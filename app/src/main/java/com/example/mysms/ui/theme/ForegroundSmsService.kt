@@ -148,7 +148,7 @@ class ForegroundSmsService : Service() {
                     Log.d(TAG, "🔄 Checking for new messages...")
 
                     // 2. به صورت دوره‌یی SMS Provider را چک کن
-                    checkSmsProvider()
+                    //checkSmsProvider()
 
                     delay(5 * 60 * 1000) // هر 5 دقیقه
 
@@ -163,11 +163,11 @@ class ForegroundSmsService : Service() {
     private suspend fun checkSmsProvider() {
         withContext(Dispatchers.IO) {
             try {
-                // چک کردن SMS Provider برای پیام‌های جدید
+                // فقط پیام‌های خوانده نشده را چک کن (read = 0)
                 val cursor = contentResolver.query(
                     android.provider.Telephony.Sms.CONTENT_URI,
                     null,
-                    null,
+                    "read = 0", // فقط پیام‌های خوانده نشده
                     null,
                     "${android.provider.Telephony.Sms.DATE} DESC LIMIT 10"
                 )
@@ -184,8 +184,12 @@ class ForegroundSmsService : Service() {
                             val body = it.getString(bodyIdx)
                             val date = if (dateIdx != -1) it.getLong(dateIdx) else 0L
 
-                            // اگر پیام جدید است (مثلاً در ۲ دقیقه گذشته)
-                            if (System.currentTimeMillis() - date < 2 * 60 * 1000) {
+// چک کردن آیا پیام خوانده شده است
+                            val readIdx = it.getColumnIndex(android.provider.Telephony.Sms.READ)
+                            val isRead = if (readIdx != -1) it.getInt(readIdx) == 1 else false
+
+// اگر پیام جدید است (در ۲ دقیقه گذشته) و خوانده نشده
+                            if (!isRead && System.currentTimeMillis() - date < 2 * 60 * 1000) {
                                 showNewMessageNotification(address, body)
                             }
                         }
@@ -226,16 +230,18 @@ class ForegroundSmsService : Service() {
                 false
             }
 
- /*           // اگر برنامه پیش‌فرض است یا NotificationListener فعال است، نوتیفیکیشن نده
-            if (isDefaultApp || isNotificationListenerEnabled) {
-                Log.d(TAG, "✅ نوتیفیکیشن نمایش داده نمی‌شود (برنامه پیش‌فرض یا NotificationListener فعال)")
-                return
-            }*/
             // فقط اگر برنامه پیش‌فرض است، نوتیفیکیشن نده
             if (isDefaultApp) {
                 Log.d(TAG, "✅ برنامه پیش‌فرض است - نوتیفیکیشن نمایش داده نمی‌شود")
                 return
             }
+
+            // چک کردن آیا پیام قبلاً خوانده شده است
+           /* val isAlreadyRead = isMessageAlreadyReadInDatabase(address, body)
+            if (isAlreadyRead) {
+                Log.d(TAG, "📭 پیام قبلاً خوانده شده است - نوتیفیکیشن نمایش داده نمی‌شود")
+                return
+            }*/
 
 // NotificationListener را چک نکن - اجازه بده نوتیفیکیشن نمایش داده شود
 // (NotificationListener خودش نوتیفیکیشن‌های تکراری را حذف می‌کند)
@@ -785,4 +791,50 @@ class ForegroundSmsService : Service() {
 
         return containsCode && containsKeyword
     }
+
+    /**
+     * بررسی آیا پیام قبلاً در دیتابیس علامت‌گذاری شده است
+     */
+    /**
+     * بررسی آیا پیام قبلاً در دیتابیس علامت‌گذاری شده است
+     */
+  /*  private suspend fun isMessageAlreadyReadInDatabase(address: String, body: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val database = com.example.mysms.data.AppDatabase.getDatabase(this@ForegroundSmsService)
+                val smsDao = database.smsDao()
+
+                // دریافت تمام پیام‌های این مخاطب
+                val messages = smsDao.getSmsByAddressFlow(address)
+
+                // گرفتن اولین مقدار از Flow
+                var foundRead = false
+                val job = launch {
+                    messages.collect { messageList ->
+                        // بررسی آیا پیام مشابه خوانده شده وجود دارد
+                        foundRead = messageList.any { message ->
+                            message.address == address &&
+                                    message.body.contains(body.take(20)) && // مقایسه بخشی از متن
+                                    message.read
+                        }
+                        if (foundRead) {
+                            cancel() // اگر پیدا شد، جمع‌آوری را متوقف کن
+                        }
+                    }
+                }
+
+                // کمی صبر کن برای دریافت داده
+                delay(500)
+                job.cancel()
+
+                Log.d(TAG, "🔍 بررسی وضعیت خوانده شدن: address=$address, foundRead=$foundRead")
+                return@withContext foundRead
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ خطا در بررسی وضعیت خوانده شدن پیام", e)
+                return@withContext false
+            }
+        }
+    }*/
+
 }

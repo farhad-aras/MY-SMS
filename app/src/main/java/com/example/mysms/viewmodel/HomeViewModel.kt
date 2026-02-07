@@ -1,6 +1,8 @@
 package com.example.mysms.viewmodel
 
 
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import android.provider.Telephony
 import android.content.Intent
 import android.Manifest
@@ -439,18 +441,54 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // Sync
     // ---------------------------
 
-    fun startInitialSync() {
+    fun startInitialSync(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            Log.d("HomeViewModel", "🔄 Starting initial sync")
-            _isSyncing.value = true
-            refreshSimIds()
+            try {
+                // اگر در حال سینک هستیم و forceRefresh نیست، انجام نده
+                if (_isSyncing.value && !forceRefresh) {
+                    Log.d("HomeViewModel", "⏸️ Sync already in progress, skipping")
+                    return@launch
+                }
 
-            repository.syncSms().collect { progress ->
-                _loadingProgress.value = progress
-                if (progress >= 100) {
+                Log.d("HomeViewModel", "🔄 Starting initial sync")
+                _isSyncing.value = true
+                _loadingProgress.value = 0
+
+                // 1. ابتدا شناسه سیم‌کارت‌ها رو بگیر
+                refreshSimIds()
+
+                // 2. سینک با timeout
+                withTimeout(30_000) { // 30 ثانیه timeout
+                    repository.syncSms().collect { progress ->
+                        _loadingProgress.value = progress
+                        Log.d("HomeViewModel", "📊 Sync progress: $progress%")
+
+                        if (progress >= 100) {
+                            _isSyncing.value = false
+                            Log.d("HomeViewModel", "✅ Initial sync completed successfully")
+
+                            // اطلاع به UI برای رفرش
+                            // اینجا می‌توانی یک Event emit کنی اگر نیاز باشد
+                        }
+                    }
+                }
+
+            } catch (e: TimeoutCancellationException) {
+                Log.e("HomeViewModel", "⏰ Sync timeout after 30 seconds")
+                _isSyncing.value = false
+                _loadingProgress.value = 0
+                // می‌توانی یک Toast یا Snackbar نشان بدی
+
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Sync failed: ${e.message}", e)
+                _isSyncing.value = false
+                _loadingProgress.value = 0
+                // خطا رو به UI گزارش بده
+
+            } finally {
+                // مطمئن شو که state حتما reset شده
+                if (_isSyncing.value) {
                     _isSyncing.value = false
-                    Log.d("HomeViewModel", "✅ Initial sync completed")
-                    // نیازی به آپدیت دستی نیست - flowها به‌طور خودکار آپدیت می‌شوند
                 }
             }
         }
