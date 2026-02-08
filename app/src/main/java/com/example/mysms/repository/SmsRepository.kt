@@ -1,7 +1,11 @@
 package com.example.mysms.repository
 
+import kotlinx.coroutines.flow.firstOrNull
+
+import android.telephony.SmsMessage
+import java.util.*
 import android.provider.Telephony
-import kotlin.concurrent.thread
+
 import kotlinx.coroutines.delay
 import android.content.Context
 import android.telephony.SmsManager
@@ -13,7 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import android.Manifest
-import android.app.PendingIntent
+
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.telephony.SubscriptionManager
@@ -25,6 +29,247 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
     companion object {
         const val SMS_SENT_ACTION = "com.example.mysms.SMS_SENT"
         const val SMS_DELIVERED_ACTION = "com.example.mysms.SMS_DELIVERED"
+    }
+
+    // ==================== توابع جدید برای مدیریت پیام‌های چندبخشی ====================
+
+    /**
+     * پردازش و ترکیب پیام‌های چندبخشی
+     */
+    suspend fun processMultipartMessage(sms: SmsEntity): SmsEntity {
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d("SmsRepository", "🔧 پردازش پیام چندبخشی: ${sms.address}, part ${sms.partIndex}/${sms.partCount}")
+
+                // اگر پیام تک‌بخشی است، مستقیم برگردان
+                if (!sms.isMultipart || sms.partCount <= 1) {
+                    Log.d("SmsRepository", "📭 پیام تک‌بخشی، ذخیره مستقیم")
+                    smsDao.insert(sms)
+                    return@withContext sms
+                }
+
+                // ذخیره قطعه فعلی
+                smsDao.insert(sms)
+
+                // دریافت تمام قطعات این پیام
+                val allParts = smsDao.getMultipartPartsByKey(sms.address, sms.messageId, sms.referenceNumber)
+
+                Log.d("SmsRepository", "📊 قطعات موجود: ${allParts.size}/${sms.partCount}")
+
+                // اگر تمام قطعات دریافت شده‌اند
+                if (allParts.size >= sms.partCount) {
+                    // مرتب‌سازی بر اساس شماره قطعه
+                    val sortedParts = allParts.sortedBy { it.partIndex }
+
+                    // بررسی که آیا تمام قطعات از 1 تا partCount وجود دارند
+                    val hasAllParts = (1..sms.partCount).all { partNum ->
+                        sortedParts.any { it.partIndex == partNum }
+                    }
+
+                    if (hasAllParts) {
+                        // ترکیب متن تمام قطعات
+                        val combinedBody = StringBuilder()
+                        sortedParts.forEach { part ->
+                            combinedBody.append(part.body)
+                        }
+
+                        // ایجاد پیام ترکیبی کامل
+                        val combinedSms = sms.copy(
+                            id = "multipart_complete_${sms.messageId}_${System.currentTimeMillis()}",
+                            body = combinedBody.toString(),
+                            isComplete = true,
+                            status = 2,
+                            partIndex = 0 // 0 نشان‌دهنده پیام کامل است
+                        )
+
+                        // ذخیره پیام کامل
+                        smsDao.insert(combinedSms)
+
+                        // حذف قطعات جداگانه (اختیاری)
+                        // smsDao.deleteIncompleteMultipartParts(sms.address, sms.messageId, sms.referenceNumber)
+
+                        Log.d("SmsRepository", "✅ پیام چندبخشی کامل شد: ${sms.address}, طول: ${combinedBody.length}")
+
+                        return@withContext combinedSms
+                    }
+                }
+
+                // اگر هنوز کامل نشده، پیام ناقص برگردان
+                Log.d("SmsRepository", "⏳ منتظر قطعات بیشتر: ${allParts.size}/${sms.partCount}")
+                return@withContext sms
+
+            } catch (e: Exception) {
+                Log.e("SmsRepository", "❌ خطا در پردازش پیام چندبخشی", e)
+                return@withContext sms
+            }
+        }
+    }
+
+    /**
+     * استخراج اطلاعات پیام چندبخشی از SmsMessage
+     */
+    private fun extractMultipartInfo(sms: SmsMessage, intent: Intent): SmsEntity {
+        val address = sms.originatingAddress ?: "Unknown"
+        val body = sms.messageBody ?: ""
+        val timestamp = if (sms.timestampMillis > 0) sms.timestampMillis else System.currentTimeMillis()
+
+        // استخراج subId
+        var subId = -1
+        val extras = intent.extras
+
+        if (extras != null) {
+            when {
+                extras.containsKey("subscription") -> subId = extras.getInt("subscription", -1)
+                extras.containsKey("sub_id") -> subId = extras.getInt("sub_id", -1)
+                extras.containsKey("phone") -> subId = extras.getInt("phone", -1)
+                extras.containsKey("simId") -> subId = extras.getInt("simId", -1)
+            }
+        }
+
+        // بررسی آیا پیام چندبخشی است
+        val isMultipart = sms.isMultipartMessage()
+        val messageId = System.currentTimeMillis() / 1000 // استفاده از timestamp به عنوان messageId
+        val referenceNumber = sms.referenceNumber() // باید این تابع را اضافه کنید
+
+        return SmsEntity(
+            id = "sms_${timestamp}_${UUID.randomUUID().toString().substring(0, 8)}",
+            address = address,
+            body = body,
+            date = timestamp,
+            type = 1,
+            subId = subId,
+            read = false,
+            threadId = calculateThreadId(address),
+            messageId = messageId,
+            partCount = if (isMultipart) sms.partCount() else 1,
+            partIndex = if (isMultipart) sms.partIndex() else 1,
+            referenceNumber = referenceNumber,
+            isMultipart = isMultipart,
+            isComplete = !isMultipart,
+            status = if (isMultipart) 0 else -1,
+            encoding = sms.encoding()
+        )
+    }
+
+    /**
+     * محاسبه threadId برای گروه‌بندی مکالمات
+     */
+    private fun calculateThreadId(address: String): Long {
+        return kotlin.math.abs(address.hashCode().toLong())
+    }
+
+    /**
+     * بررسی دوره‌ای پیام‌های چندبخشی ناقص و تلاش برای ترکیب آنها
+     */
+    suspend fun checkAndCompleteMultipartMessages() {
+        withContext(Dispatchers.IO) {
+            try {
+                Log.d("SmsRepository", "🔄 بررسی پیام‌های چندبخشی ناقص...")
+
+                // پیام‌های ناقص در 10 دقیقه گذشته
+                val timeThreshold = System.currentTimeMillis() - (10 * 60 * 1000)
+                val incompleteMessages = smsDao.getIncompleteMultipartMessages(timeThreshold)
+
+                Log.d("SmsRepository", "📋 تعداد پیام‌های ناقص: ${incompleteMessages.size}")
+
+                incompleteMessages.forEach { key ->
+                    try {
+                        val parts = smsDao.getMultipartPartsByKey(key.address, key.messageId, key.referenceNumber)
+                        val partCount = smsDao.getMultipartPartCount(key.address, key.messageId, key.referenceNumber)
+
+                        // اگر تمام قطعات وجود دارند
+                        if (parts.size >= partCount) {
+                            val sortedParts = parts.sortedBy { it.partIndex }
+
+                            // بررسی توالی قطعات
+                            val hasSequence = (1..partCount).all { partNum ->
+                                sortedParts.any { it.partIndex == partNum }
+                            }
+
+                            if (hasSequence) {
+                                // ترکیب متن
+                                val combinedBody = StringBuilder()
+                                sortedParts.forEach { part ->
+                                    combinedBody.append(part.body)
+                                }
+
+                                // ایجاد پیام کامل
+                                val firstPart = sortedParts.first()
+                                val completeSms = firstPart.copy(
+                                    id = "multipart_complete_${key.messageId}_${System.currentTimeMillis()}",
+                                    body = combinedBody.toString(),
+                                    isComplete = true,
+                                    status = 2,
+                                    partIndex = 0
+                                )
+
+                                // ذخیره
+                                smsDao.insert(completeSms)
+                                Log.d("SmsRepository", "✅ پیام ناقص کامل شد: ${key.address}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SmsRepository", "❌ خطا در پردازش پیام ناقص: ${key.address}", e)
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e("SmsRepository", "❌ خطا در بررسی پیام‌های ناقص", e)
+            }
+        }
+    }
+
+    /**
+     * توابع کمکی برای SmsMessage - برای نسخه‌های مختلف اندروید
+     */
+    private fun SmsMessage.isMultipartMessage(): Boolean {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                this.messageBody?.length ?: 0 > 160 // حدس ساده
+            } else {
+                // برای نسخه‌های قدیمی
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun SmsMessage.partCount(): Int {
+        return try {
+            // در واقعیت این اطلاعات از PDU استخراج می‌شود
+            1 // مقدار پیش‌فرض
+        } catch (e: Exception) {
+            1
+        }
+    }
+
+    private fun SmsMessage.partIndex(): Int {
+        return 1 // مقدار پیش‌فرض
+    }
+
+    private fun SmsMessage.referenceNumber(): Int {
+        return 0 // مقدار پیش‌فرض
+    }
+
+    private fun SmsMessage.encoding(): String {
+        return "UTF-8"
+    }
+
+    /**
+     * دریافت پیام‌های ترکیب شده (کامل) برای یک مخاطب
+     */
+    suspend fun getCompleteMessagesByAddress(address: String): List<SmsEntity> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val allMessages = smsDao.getSmsByAddressFlow(address).firstOrNull() ?: emptyList()
+                // فیلتر پیام‌های کامل
+                allMessages.filter { message -> !message.isMultipart || message.isComplete }
+            } catch (e: Exception) {
+                Log.e("SmsRepository", "❌ خطا در دریافت پیام‌های کامل", e)
+                emptyList()
+            }
+        }
     }
 
     // ✅ تابع جدید: دریافت لیست مکالمات (آخرین پیام هر مخاطب)

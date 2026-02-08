@@ -1,6 +1,7 @@
 package com.example.mysms.viewmodel
 
-
+import com.example.mysms.data.MultipartKey
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import android.provider.Telephony
@@ -23,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -467,8 +469,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             _isSyncing.value = false
                             Log.d("HomeViewModel", "✅ Initial sync completed successfully")
 
-                            // اطلاع به UI برای رفرش
-                            // اینجا می‌توانی یک Event emit کنی اگر نیاز باشد
+                            // 3. بعد از سینک، پیام‌های چندبخشی را چک کن
+                            checkMultipartAfterSync()
+
+                            // 4. شروع چک دوره‌ای پیام‌های چندبخشی
+                            startMultipartCombinationCheck()
                         }
                     }
                 }
@@ -514,6 +519,32 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return (db + temp).sortedByDescending { it.date }
     }
 
+    // ---------------------------
+    // Combined Messages (بهبود یافته)
+    // ---------------------------
+
+    /**
+     * دریافت پیام‌های ترکیب شده (تک‌بخشی + چندبخشی کامل)
+     */
+    suspend fun getCombinedMessagesImproved(address: String): List<SmsEntity> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // اول پیام‌های کامل شده را بگیر
+                val combinedMessages = getCombinedMessagesByAddress(address)
+
+                // پیام‌های موقت را اضافه کن
+                val temp = _tempMessages.value.filter { it.address == address }
+
+                (combinedMessages + temp)
+                    .sortedByDescending { it.date }
+                    .distinctBy { it.id }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error getting improved combined messages", e)
+                getCombinedMessages(address) // fallback به تابع قدیمی
+            }
+        }
+    }
+
     // تابع جدید برای mark single message
     fun markMessageAsRead(messageId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -525,6 +556,153 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    // ==================== توابع جدید برای مدیریت پیام‌های چندبخشی ====================
+
+    /**
+     * دریافت پیام‌های چندبخشی ناقص
+     */
+    suspend fun getIncompleteMultipartMessages(): List<MultipartKey> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val timeThreshold = System.currentTimeMillis() - (30 * 60 * 1000) // 30 دقیقه گذشته
+                smsDao.getIncompleteMultipartMessages(timeThreshold)
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error getting incomplete multipart messages", e)
+                emptyList()
+            }
+        }
+    }
+
+    /**
+     * ترکیب پیام‌های چندبخشی کامل شده
+     */
+    suspend fun combineCompleteMultipartMessages() {
+        withContext(Dispatchers.IO) {
+            try {
+                Log.d("HomeViewModel", "🔗 ترکیب پیام‌های چندبخشی کامل شده...")
+
+                val incompleteMessages = getIncompleteMultipartMessages()
+                Log.d("HomeViewModel", "📋 تعداد پیام‌های ناقص: ${incompleteMessages.size}")
+
+                incompleteMessages.forEach { key ->
+                    try {
+                        val parts = smsDao.getMultipartPartsByKey(key.address, key.messageId, key.referenceNumber)
+                        val expectedCount = parts.firstOrNull()?.partCount ?: 1
+
+                        Log.d("HomeViewModel", "🔍 بررسی پیام: ${key.address}, قطعات: ${parts.size}/$expectedCount")
+
+                        // اگر تمام قطعات دریافت شده‌اند
+                        if (parts.size >= expectedCount) {
+                            val sortedParts = parts.sortedBy { it.partIndex }
+
+                            // بررسی توالی قطعات
+                            val hasAllParts = (1..expectedCount).all { partNum ->
+                                sortedParts.any { it.partIndex == partNum }
+                            }
+
+                            if (hasAllParts) {
+                                // ترکیب متن
+                                val combinedBody = StringBuilder()
+                                sortedParts.forEach { part ->
+                                    combinedBody.append(part.body)
+                                }
+
+                                // ایجاد پیام کامل
+                                val firstPart = sortedParts.first()
+                                val completeSms = firstPart.copy(
+                                    id = "multipart_complete_${key.messageId}_${System.currentTimeMillis()}",
+                                    body = combinedBody.toString(),
+                                    isComplete = true,
+                                    status = 2,
+                                    partIndex = 0
+                                )
+
+                                // ذخیره پیام کامل
+                                smsDao.insert(completeSms)
+
+                                // آپدیت state
+                                refreshSmsList()
+
+                                Log.d("HomeViewModel", "✅ پیام چندبخشی ترکیب شد: ${key.address}, طول: ${combinedBody.length}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("HomeViewModel", "❌ خطا در ترکیب پیام: ${key.address}", e)
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error combining multipart messages", e)
+            }
+        }
+    }
+
+    /**
+     * دریافت پیام‌های ترکیب شده برای یک مخاطب
+     */
+    suspend fun getCombinedMessagesByAddress(address: String): List<SmsEntity> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val allMessages = smsDao.getSmsByAddressFlow(address).firstOrNull() ?: emptyList()
+                // فیلتر پیام‌های کامل یا تک‌بخشی
+                allMessages.filter { message ->
+                    !message.isMultipart || message.isComplete
+                }.sortedByDescending { it.date }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error getting combined messages", e)
+                emptyList()
+            }
+        }
+    }
+
+    /**
+     * بررسی و ترکیب دوره‌ای پیام‌های چندبخشی
+     */
+    fun startMultipartCombinationCheck() {
+        viewModelScope.launch {
+            while (isActive) {
+                try {
+                    delay(30 * 1000) // هر 30 ثانیه
+                    combineCompleteMultipartMessages()
+                } catch (e: Exception) {
+                    Log.e("HomeViewModel", "❌ Error in multipart check", e)
+                    delay(60 * 1000) // در صورت خطا، 1 دقیقه صبر کن
+                }
+            }
+        }
+    }
+
+    /**
+     * رفرش لیست پیام‌ها
+     */
+    private suspend fun refreshSmsList() {
+        withContext(Dispatchers.IO) {
+            try {
+                val updatedList = smsDao.getAllSms()
+                _smsList.value = updatedList
+
+                // همچنین مکالمات را آپدیت کن
+                val updatedConversations = smsDao.getConversationsFlow().firstOrNull() ?: emptyList()
+                _conversations.value = updatedConversations
+
+                Log.d("HomeViewModel", "🔄 لیست پیام‌ها رفرش شد: ${updatedList.size} پیام")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error refreshing SMS list", e)
+            }
+        }
+    }
+
+    /**
+     * تابع کمکی برای چک کردن پیام‌های چندبخشی هنگام سینک
+     */
+    fun checkMultipartAfterSync() {
+        viewModelScope.launch {
+            delay(2000) // 2 ثانیه بعد از سینک
+            combineCompleteMultipartMessages()
+        }
+    }
+
     // تابع اصلاح شده برای mark conversation
     fun markConversationAsRead(address: String) {
         viewModelScope.launch(Dispatchers.IO) {

@@ -1,7 +1,6 @@
 package com.example.mysms.ui.theme
 
-import android.os.Handler
-import android.os.Looper
+
 import androidx.annotation.RequiresApi
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Build
+import android.os.Bundle
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
@@ -18,11 +18,13 @@ import androidx.core.app.NotificationCompat
 import com.example.mysms.R
 import com.example.mysms.data.AppDatabase
 import com.example.mysms.data.SmsEntity
+import com.example.mysms.repository.SmsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.*
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.runBlocking
 
 class SmsReceiver : BroadcastReceiver() {
 
@@ -119,39 +121,52 @@ class SmsReceiver : BroadcastReceiver() {
                 }
 
                 if (smsList.isNotEmpty()) {
+                    // ============ پردازش پیام‌های چندبخشی ============
+                    processMultipartMessages(context, smsList)
+
+                    // ذخیره در دیتابیس (حتی پیام‌های ناقص)
                     saveToDatabase(context, smsList)
                     Log.d("SmsReceiver", "✅ Successfully saved ${smsList.size} SMS to database")
 
-                    // ============ نمایش نوتیفیکیشن بلافاصله ============
-                    // برای اولین پیام (معمولاً کافی است)
-                    val firstSms = smsList.first()
-                    try {
-                        val address = firstSms.address
-                        val body = firstSms.body
+                    // ============ نمایش نوتیفیکیشن برای پیام‌های تک‌بخشی ============
+                    val singlePartMessages = smsList.filter { !it.isMultipart }
+                    if (singlePartMessages.isNotEmpty()) {
+                        val firstSms = singlePartMessages.first()
+                        try {
+                            val address = firstSms.address
+                            val body = firstSms.body
 
-                        Log.d("SmsReceiver", "📨 نمایش نوتیفیکیشن برای: $address")
+                            Log.d("SmsReceiver", "📨 نمایش نوتیفیکیشن برای پیام تک‌بخشی: $address")
 
-                        // شروع سرویس برای نمایش نوتیفیکیشن
-                        val serviceIntent = Intent(context, ForegroundSmsService::class.java)
-                        serviceIntent.putExtra("show_notification", true)
-                        serviceIntent.putExtra("address", address)
-                        serviceIntent.putExtra("body", body)
+                            // شروع سرویس برای نمایش نوتیفیکیشن
+                            val serviceIntent = Intent(context, ForegroundSmsService::class.java)
+                            serviceIntent.putExtra("show_notification", true)
+                            serviceIntent.putExtra("address", address)
+                            serviceIntent.putExtra("body", body)
+                            serviceIntent.putExtra("is_complete_multipart", false)
 
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            context.startForegroundService(serviceIntent)
-                        } else {
-                            context.startService(serviceIntent)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(serviceIntent)
+                            } else {
+                                context.startService(serviceIntent)
+                            }
+
+                        } catch (e: Exception) {
+                            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام تک", e)
                         }
-
-                    } catch (e: Exception) {
-                        Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن", e)
                     }
-                    // ============ پایان نمایش نوتیفیکیشن ============
 
-                    // نمایش نوتیفیکیشن برای هر پیام (روش قدیمی برای backup)
-                /*    smsList.forEach { sms ->
-                        showNotificationAlways(context, sms)
-                    }*/
+                    // ============ نمایش نوتیفیکیشن برای پیام‌های چندبخشی کامل شده ============
+                    // (این کار در تابع processMultipartMessages انجام می‌شود)
+
+                    // نمایش نوتیفیکیشن backup برای هر پیام
+                    /*
+                    smsList.forEach { sms ->
+                        if (!sms.isMultipart) {
+                            showNotificationForSingleMessage(context, sms)
+                        }
+                    }
+                    */
                 }
 
             } catch (e: Exception) {
@@ -201,14 +216,40 @@ class SmsReceiver : BroadcastReceiver() {
                 }
 
                 if (smsList.isNotEmpty()) {
+                    // ============ پردازش پیام‌های چندبخشی ============
+                    processMultipartMessages(context, smsList)
+
+                    // ذخیره در دیتابیس
                     saveToDatabase(context, smsList)
                     Log.d("SmsReceiver", "✅ Successfully saved ${smsList.size} legacy SMS")
 
-                    // نمایش نوتیفیکیشن برای هر پیام
-                /*    smsList.forEach { sms ->
-                        // ============ تغییر مهم اینجا ============
-                        showNotificationAlways(context, sms)
-                    }*/
+                    // ============ نمایش نوتیفیکیشن برای پیام‌های تک‌بخشی ============
+                    val singlePartMessages = smsList.filter { !it.isMultipart }
+                    if (singlePartMessages.isNotEmpty()) {
+                        val firstSms = singlePartMessages.first()
+                        try {
+                            val address = firstSms.address
+                            val body = firstSms.body
+
+                            Log.d("SmsReceiver", "📨 نمایش نوتیفیکیشن برای پیام تک‌بخشی (legacy): $address")
+
+                            // شروع سرویس برای نمایش نوتیفیکیشن
+                            val serviceIntent = Intent(context, ForegroundSmsService::class.java)
+                            serviceIntent.putExtra("show_notification", true)
+                            serviceIntent.putExtra("address", address)
+                            serviceIntent.putExtra("body", body)
+                            serviceIntent.putExtra("is_complete_multipart", false)
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(serviceIntent)
+                            } else {
+                                context.startService(serviceIntent)
+                            }
+
+                        } catch (e: Exception) {
+                            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام تک (legacy)", e)
+                        }
+                    }
                 }
 
             } catch (e: Exception) {
@@ -222,13 +263,12 @@ class SmsReceiver : BroadcastReceiver() {
         val body = sms.messageBody ?: ""
         val timestamp = if (sms.timestampMillis > 0) sms.timestampMillis else System.currentTimeMillis()
 
-        // استخراج subId از intent
+        // استخراج subId
         var subId = -1
         val extras = intent.extras
 
         // روش‌های مختلف استخراج subId
         if (extras != null) {
-            // روش 1: کلیدهای مختلف
             when {
                 extras.containsKey("subscription") -> subId = extras.getInt("subscription", -1)
                 extras.containsKey("sub_id") -> subId = extras.getInt("sub_id", -1)
@@ -256,15 +296,247 @@ class SmsReceiver : BroadcastReceiver() {
 
         Log.d("SmsReceiver", "📱 Extracted subId: $subId for SMS from: $address")
 
+        // ==================== بخش جدید: تشخیص پیام‌های چندبخشی ====================
+        val isMultipart = isMultipartMessage(sms, extras)
+        val messageId = extractMessageId(sms, extras, timestamp)
+        val referenceNumber = extractReferenceNumber(sms, extras)
+        val partCount = extractPartCount(sms, extras)
+        val partIndex = extractPartIndex(sms, extras)
+
+        Log.d("SmsReceiver", "🔗 Multipart info: isMultipart=$isMultipart, messageId=$messageId, ref=$referenceNumber, parts=$partCount/$partIndex")
+
         return SmsEntity(
             id = "sms_${timestamp}_${UUID.randomUUID().toString().substring(0, 8)}",
             address = address,
             body = body,
             date = timestamp,
             type = 1, // دریافتی
-            subId = subId, // استفاده از subId واقعی
-            read = false
+            subId = subId,
+            read = false,
+            // ==================== فیلدهای چندبخشی ====================
+            threadId = calculateThreadId(address),
+            messageId = messageId,
+            partCount = partCount,
+            partIndex = partIndex,
+            referenceNumber = referenceNumber,
+            isMultipart = isMultipart,
+            isComplete = !isMultipart || (partIndex == partCount),
+            status = if (isMultipart) 0 else -1,
+            contentType = "text/plain",
+            encoding = "UTF-8"
         )
+    }
+
+    // ==================== توابع کمکی برای تشخیص پیام‌های چندبخشی ====================
+
+    /**
+     * تشخیص آیا پیام چندبخشی است
+     */
+    private fun isMultipartMessage(sms: SmsMessage, extras: Bundle?): Boolean {
+        try {
+            // روش 1: بررسی از طریق extras
+            if (extras != null) {
+                // کلیدهای رایج برای پیام‌های چندبخشی
+                val multipartKeys = listOf("isMultipart", "multipart", "concat_ref", "concat_ref_number")
+                if (multipartKeys.any { extras.containsKey(it) }) {
+                    return true
+                }
+
+                // بررسی مقادیر عددی مربوط به multipart
+                if (extras.containsKey("concat_ref") || extras.containsKey("concat_ref_number")) {
+                    return true
+                }
+            }
+
+            // روش 2: بررسی طول متن (پیام‌های طولانی معمولاً چندبخشی هستند)
+            val messageBody = sms.messageBody ?: ""
+            if (messageBody.length >= 140) { // نزدیک به حد SMS
+                return true
+            }
+
+            // روش 3: بررسی PDU header (برای متد قدیمی)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+                // برای اندروید قدیمی
+                return messageBody.length > 160
+            }
+
+            return false
+
+        } catch (e: Exception) {
+            Log.e("SmsReceiver", "❌ خطا در تشخیص multipart", e)
+            return false
+        }
+    }
+
+    /**
+     * استخراج شناسه پیام
+     */
+    private fun extractMessageId(sms: SmsMessage, extras: Bundle?, timestamp: Long): Long {
+        return try {
+            if (extras != null) {
+                // اولویت 1: از extras بگیر
+                when {
+                    extras.containsKey("message_id") -> extras.getLong("message_id", timestamp)
+                    extras.containsKey("msg_id") -> extras.getLong("msg_id", timestamp)
+                    extras.containsKey("transactionId") -> extras.getLong("transactionId", timestamp)
+                    else -> timestamp
+                }
+            } else {
+                timestamp
+            }
+        } catch (e: Exception) {
+            timestamp
+        }
+    }
+
+    /**
+     * استخراج شماره مرجع برای پیام‌های چندبخشی
+     */
+    private fun extractReferenceNumber(sms: SmsMessage, extras: Bundle?): Int {
+        return try {
+            if (extras != null) {
+                when {
+                    extras.containsKey("concat_ref") -> extras.getInt("concat_ref", 0)
+                    extras.containsKey("concat_ref_number") -> extras.getInt("concat_ref_number", 0)
+                    extras.containsKey("reference_number") -> extras.getInt("reference_number", 0)
+                    extras.containsKey("ref") -> extras.getInt("ref", 0)
+                    else -> sms.originatingAddress?.hashCode()?.and(0xFFFF) ?: 0
+                }
+            } else {
+                sms.originatingAddress?.hashCode()?.and(0xFFFF) ?: 0
+            }
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    /**
+     * استخراج تعداد کل قطعات
+     */
+    private fun extractPartCount(sms: SmsMessage, extras: Bundle?): Int {
+        return try {
+            if (extras != null) {
+                when {
+                    extras.containsKey("concat_count") -> extras.getInt("concat_count", 1)
+                    extras.containsKey("part_count") -> extras.getInt("part_count", 1)
+                    extras.containsKey("total_parts") -> extras.getInt("total_parts", 1)
+                    else -> 1
+                }
+            } else {
+                1
+            }
+        } catch (e: Exception) {
+            1
+        }
+    }
+
+    /**
+     * استخراج شماره قطعه فعلی
+     */
+    private fun extractPartIndex(sms: SmsMessage, extras: Bundle?): Int {
+        return try {
+            if (extras != null) {
+                when {
+                    extras.containsKey("concat_seq") -> extras.getInt("concat_seq", 1)
+                    extras.containsKey("part_index") -> extras.getInt("part_index", 1)
+                    extras.containsKey("current_part") -> extras.getInt("current_part", 1)
+                    else -> 1
+                }
+            } else {
+                1
+            }
+        } catch (e: Exception) {
+            1
+        }
+    }
+
+    /**
+     * محاسبه threadId
+     */
+    private fun calculateThreadId(address: String): Long {
+        return kotlin.math.abs(address.hashCode().toLong())
+    }
+
+    /**
+     * پردازش هوشمند پیام‌های چندبخشی
+     */
+    private fun processMultipartMessages(context: Context, smsList: List<SmsEntity>) {
+        if (smsList.isEmpty()) return
+
+        runBlocking {
+            try {
+                val database = AppDatabase.getDatabase(context)
+                val repository = SmsRepository(context, database.smsDao())
+
+                // پردازش هر پیام
+                smsList.forEach { sms ->
+                    try {
+                        val processedSms = repository.processMultipartMessage(sms)
+
+                        // اگر پیام کامل شد، نوتیفیکیشن نمایش بده
+                        if (processedSms.isComplete && processedSms.isMultipart) {
+                            Log.d("SmsReceiver", "🎉 پیام چندبخشی کامل شد، نمایش نوتیفیکیشن")
+                            showNotificationForCompleteMessage(context, processedSms)
+                        } else if (!sms.isMultipart) {
+                            // برای پیام‌های تک‌بخشی هم نوتیفیکیشن نمایش بده
+                            showNotificationForSingleMessage(context, sms)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SmsReceiver", "❌ خطا در پردازش پیام: ${sms.address}", e)
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e("SmsReceiver", "❌ خطا در پردازش multipart messages", e)
+            }
+        }
+    }
+
+    /**
+     * نمایش نوتیفیکیشن برای پیام کامل شده
+     */
+    private fun showNotificationForCompleteMessage(context: Context, sms: SmsEntity) {
+        try {
+            // استفاده از ForegroundService برای نمایش نوتیفیکیشن
+            val serviceIntent = Intent(context, ForegroundSmsService::class.java)
+            serviceIntent.putExtra("show_notification", true)
+            serviceIntent.putExtra("address", sms.address)
+            serviceIntent.putExtra("body", sms.body)
+            serviceIntent.putExtra("is_complete_multipart", true)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+
+            Log.d("SmsReceiver", "📢 نوتیفیکیشن برای پیام کامل ارسال شد: ${sms.address}")
+
+        } catch (e: Exception) {
+            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام کامل", e)
+        }
+    }
+
+    /**
+     * نمایش نوتیفیکیشن برای پیام تک‌بخشی
+     */
+    private fun showNotificationForSingleMessage(context: Context, sms: SmsEntity) {
+        try {
+            val serviceIntent = Intent(context, ForegroundSmsService::class.java)
+            serviceIntent.putExtra("show_notification", true)
+            serviceIntent.putExtra("address", sms.address)
+            serviceIntent.putExtra("body", sms.body)
+            serviceIntent.putExtra("is_complete_multipart", false)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+
+        } catch (e: Exception) {
+            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام تک", e)
+        }
     }
 
     private suspend fun saveToDatabase(context: Context, smsList: List<SmsEntity>) {

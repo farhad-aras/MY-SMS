@@ -6,6 +6,11 @@ import android.content.pm.PackageManager
 import android.provider.Telephony
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import com.example.mysms.ui.theme.SimpleMessageBubble
+import com.example.mysms.ui.theme.LinkSecurityManager
+import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -181,6 +186,72 @@ fun MySMSApp() {
     // ==================== مدیریت بازکردن از نوتیفیکیشن ====================
     val notificationPrefs = remember { context.getSharedPreferences("notification_prefs", Context.MODE_PRIVATE) }
 
+
+    // ==================== توابع کمکی ====================
+
+    /**
+     * نمایش دیالوگ عملیات روی عدد
+     */
+    fun showNumberActionDialog(context: Context, number: String) {
+        android.app.AlertDialog.Builder(context)
+            .setTitle("🔢 عملیات روی عدد")
+            .setMessage("عدد انتخاب شده: $number\n\nچه عملیاتی انجام شود؟")
+            .setPositiveButton("📋 کپی") { dialog, _ ->
+                // کپی به کلیپ‌بورد
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = android.content.ClipData.newPlainText("عدد", number)
+                clipboard.setPrimaryClip(clip)
+                android.widget.Toast.makeText(context, "✅ عدد کپی شد", android.widget.Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNeutralButton("📞 شماره‌گیری") { dialog, _ ->
+                // شماره‌گیری
+                val intent = android.content.Intent(android.content.Intent.ACTION_DIAL)
+                intent.data = android.net.Uri.parse("tel:$number")
+                context.startActivity(intent)
+                dialog.dismiss()
+            }
+            .setNegativeButton("📝 جستجو") { dialog, _ ->
+                // جستجو در گوگل
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                intent.data = android.net.Uri.parse("https://www.google.com/search?q=$number")
+                context.startActivity(intent)
+                dialog.dismiss()
+            }
+            .setNegativeButton("لغو") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /**
+     * نمایش دیالوگ مدیریت لیست سفید
+     */
+    fun showWhitelistManagerDialog() {
+        val whitelist = LinkSecurityManager.getWhitelist().toList()
+        val whitelistText = if (whitelist.isNotEmpty()) {
+            whitelist.joinToString("\n")
+        } else {
+            "لیست سفید خالی است"
+        }
+
+        android.app.AlertDialog.Builder(context)
+            .setTitle("🌐 مدیریت لیست سفید لینک‌ها")
+            .setMessage("دامنه‌های معتبر:\n\n$whitelistText\n\nمی‌توانید دامنه‌های جدید اضافه کنید:")
+            .setView(android.widget.EditText(context).apply {
+                hint = "مثال: example.com"
+            })
+            .setPositiveButton("➕ افزودن") { dialog, _ ->
+                val editText = (dialog as android.app.AlertDialog).findViewById<android.widget.EditText>(android.R.id.edit)
+                val newDomain = editText?.text?.toString()?.trim()
+                if (!newDomain.isNullOrEmpty()) {
+                    LinkSecurityManager.addToWhitelist(newDomain)
+                    android.widget.Toast.makeText(context, "✅ دامنه اضافه شد", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("باشه") { dialog, _ -> dialog.dismiss() }
+            .show()
+    }
 
 
 // شروع سرویس‌ها
@@ -764,6 +835,27 @@ fun MySMSApp() {
                                     imageVector = Icons.Default.Reply,
                                     contentDescription = null
                                 )
+                            }
+                        )
+                        // آیتم مدیریت لیست سفید لینک‌ها
+                        Divider()
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        painter = rememberVectorPainter(Icons.Default.Security),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("مدیریت لیست سفید لینک‌ها")
+                                }
+                            },
+                            onClick = {
+                                showMenu = false
+                                showWhitelistManagerDialog()
                             }
                         )
 

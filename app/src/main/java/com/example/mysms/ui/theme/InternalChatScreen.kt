@@ -1,5 +1,9 @@
 package com.example.mysms.ui.theme
 
+
+import android.content.ClipboardManager
+import com.example.mysms.ui.theme.AdvancedMessageBubble
+import com.example.mysms.ui.theme.LinkSecurityManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mysms.data.SmsEntity
 import android.content.Context
+import android.util.Log
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mysms.viewmodel.HomeViewModel
@@ -201,7 +207,18 @@ fun InternalChatScreen(
 
                 if (isExpanded) {
                     items(messagesOfDay.sortedBy { it.date }) { message ->
-                        MessageBubble(message)
+                        val isMe = message.type == 2
+                        AdvancedMessageBubble(
+                            message = message,
+                            isOwnMessage = isMe,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            onNumberSelected = { number ->
+                                Log.d("InternalChat", "🔢 عدد انتخاب شد در لیست: $number")
+                                // عملیات روی عدد
+                            }
+                        )
                     }
                 }
             }
@@ -253,44 +270,49 @@ fun InternalChatScreen(
 @Composable
 fun MessageBubble(message: SmsEntity) {
     val isMe = message.type == 2
-    Box(
+    val context = LocalContext.current
+
+    AdvancedMessageBubble(
+        message = message,
+        isOwnMessage = isMe,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
-        contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
-    ) {
-        Surface(
-            shape = RoundedCornerShape(
-                topStart = 18.dp,
-                topEnd = 18.dp,
-                bottomStart = if (isMe) 18.dp else 4.dp,
-                bottomEnd = if (isMe) 4.dp else 18.dp
-            ),
-            color = if (isMe) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-            shadowElevation = 2.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
-                Text(
-                    text = message.body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isMe) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurface,
-                    lineHeight = 20.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = JalaliDateUtil.getTimeOnly(message.date),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isMe) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    modifier = Modifier.align(Alignment.End)
-                )
-            }
+        context = context,
+        onNumberSelected = { number ->
+            // هندل کردن انتخاب عدد
+            Log.d("InternalChat", "🔢 عدد انتخاب شد: $number")
+
+            // نمایش دیالوگ برای عملیات روی عدد
+            showNumberActionDialog(context, number)
         }
-    }
+    )
+}
+
+/*
+* نمایش دیالوگ عملیات برای عدد انتخاب شده
+*/
+private fun showNumberActionDialog(context: Context, number: String) {
+    android.app.AlertDialog.Builder(context)
+        .setTitle("🔢 عملیات روی عدد")
+        .setMessage("عدد انتخاب شده: $number\n\nچه عملیاتی انجام شود؟")
+        .setPositiveButton("📋 کپی") { dialog, _ ->
+            // کپی به کلیپ‌بورد
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = android.content.ClipData.newPlainText("عدد", number)
+            clipboard.setPrimaryClip(clip)
+            android.widget.Toast.makeText(context, "✅ عدد کپی شد", android.widget.Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+        .setNeutralButton("📞 شماره‌گیری") { dialog, _ ->
+            // شماره‌گیری
+            val intent = android.content.Intent(android.content.Intent.ACTION_DIAL)
+            intent.data = android.net.Uri.parse("tel:$number")
+            context.startActivity(intent)
+            dialog.dismiss()
+        }
+        .setNegativeButton("لغو") { dialog, _ ->
+            dialog.dismiss()
+        }
+        .show()
 }
