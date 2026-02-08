@@ -1,6 +1,5 @@
 package com.example.mysms.ui.theme
 
-
 import androidx.compose.ui.platform.LocalContext
 import android.content.ClipboardManager
 import android.content.Context
@@ -129,8 +128,9 @@ fun ChatScreen(
                 AdvancedMessageBubble(
                     message = message,
                     isOwnMessage = isOwnMessage,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    context = localContext,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                     onNumberSelected = { number ->
                         Log.d("ChatScreen", "🔢 عدد انتخاب شد در لیست: $number")
                         showNumberActionDialog(localContext, number)
@@ -235,7 +235,6 @@ fun MessageBubble(
         message = message,
         isOwnMessage = isOwnMessage,
         modifier = modifier,
-        context = context,
         onNumberSelected = { number ->
             // هندل کردن انتخاب عدد
             Log.d("ChatScreen", "🔢 عدد انتخاب شد: $number")
@@ -244,9 +243,6 @@ fun MessageBubble(
             showNumberActionDialog(context, number)
         }
     )
-
-    // وضعیت ارسال (برای پیام‌های ارسالی) - در AdvancedMessageBubble نمایش داده می‌شود
-    // این بخش حذف شده چون در AdvancedMessageBubble پیاده‌سازی شده
 }
 
 /**
@@ -276,4 +272,3 @@ private fun showNumberActionDialog(context: Context, number: String) {
         }
         .show()
 }
-// تابع getContactName حذف شده - از تابع موجود در ChatComponents.kt استفاده می‌شود

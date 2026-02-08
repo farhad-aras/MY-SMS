@@ -1,6 +1,5 @@
 package com.example.mysms.ui.theme
 
-
 import android.content.ClipboardManager
 import com.example.mysms.ui.theme.AdvancedMessageBubble
 import com.example.mysms.ui.theme.LinkSecurityManager
@@ -31,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mysms.viewmodel.HomeViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +65,7 @@ fun InternalChatScreen(
     }
 
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     // مشاهده وضعیت expand/collapse از ViewModel
     val expandedDates by vm.expandedDates.collectAsState()
@@ -80,7 +81,9 @@ fun InternalChatScreen(
 
             // اسکرول به آخرین پیام
             if (messages.isNotEmpty()) {
-                listState.animateScrollToItem(messages.size - 1)
+                coroutineScope.launch {
+                    listState.animateScrollToItem(messages.size - 1)
+                }
             }
         }
     }
@@ -90,6 +93,7 @@ fun InternalChatScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
+        // هدر چت
         Surface(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth()
@@ -100,13 +104,13 @@ fun InternalChatScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // دکمه Back با آیکون معمولی
+                // دکمه بازگشت
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.ArrowBack, // تغییر از AutoMirrored.Filled.ArrowBack
+                        imageVector = Icons.Filled.ArrowBack,
                         contentDescription = "بازگشت",
                         tint = Color.White
                     )
@@ -216,7 +220,7 @@ fun InternalChatScreen(
                                 .padding(horizontal = 12.dp, vertical = 4.dp),
                             onNumberSelected = { number ->
                                 Log.d("InternalChat", "🔢 عدد انتخاب شد در لیست: $number")
-                                // عملیات روی عدد
+                                showNumberActionDialog(context, number)
                             }
                         )
                     }
@@ -251,13 +255,18 @@ fun InternalChatScreen(
                         if (draftMessage.isNotBlank()) {
                             onSendClick(draftMessage)
                             onDraftChange("")
+
+                            // اسکرول به پایین
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(messages.size)
+                            }
                         }
                     },
                     enabled = draftMessage.isNotBlank(),
                     modifier = Modifier.padding(start = 8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Send, // تغییر از AutoMirrored.Filled.Send
+                        imageVector = Icons.Filled.Send,
                         contentDescription = "ارسال",
                         tint = MaterialTheme.colorScheme.primary
                     )

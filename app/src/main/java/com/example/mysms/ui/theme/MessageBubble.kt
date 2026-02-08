@@ -1,9 +1,9 @@
 package com.example.mysms.ui.theme
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.platform.LocalContext
@@ -45,16 +45,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -72,9 +68,9 @@ import java.util.regex.Pattern
 /**
  * کامپوننت پیشرفته برای نمایش پیام با قابلیت‌های:
  * 1. لمس طولانی برای انتخاب پیام
- * 2. انتخاب متن داخل پیام
- * 3. تشخیص هوشمند اعداد
- * 4. کلیک روی لینک‌ها
+ * 2. انتخاب متن داخل پیام با SelectionContainer
+ * 3. تشخیص هوشمند اعداد (با پشتیبانی از انتخاب)
+ * 4. تشخیص لینک‌های بدون پروتکل
  * 5. منو عملیات (کپی، اشتراک‌گذاری، اطلاعات)
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -87,114 +83,175 @@ fun AdvancedMessageBubble(
     onNumberSelected: (String) -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var selectedText by remember { mutableStateOf("") }
+    var showNumberSelectionDialog by remember { mutableStateOf(false) }
+    var extractedNumbers by remember { mutableStateOf(listOf<String>()) }
 
-    // تشخیص لینک‌ها و اعداد در متن
+    // تشخیص لینک‌ها و اعداد در متن (نسخه بهبود یافته)
     val annotatedText = remember(message.body) {
-        createEnhancedAnnotatedText(message.body)
+        createEnhancedAnnotatedText(message.body).also {
+            // استخراج اعداد برای استفاده در منو
+            extractedNumbers = extractAllNumbersFromText(message.body)
+        }
     }
 
-    Box(
-        modifier = modifier,
-        contentAlignment = if (isOwnMessage) Alignment.CenterEnd else Alignment.CenterStart
+    // رنگ‌های سفارشی برای انتخاب متن
+    val customTextSelectionColors = TextSelectionColors(
+        handleColor = MaterialTheme.colorScheme.primary,
+        backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+    )
+
+    CompositionLocalProvider(
+        LocalTextSelectionColors provides customTextSelectionColors
     ) {
-        Surface(
-            shape = if (isOwnMessage) {
-                RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp)
-            } else {
-                RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
-            },
-            color = if (isOwnMessage) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-            shadowElevation = 2.dp,
-            modifier = Modifier
-                .clip(
-                    if (isOwnMessage) {
-                        RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp)
-                    } else {
-                        RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
-                    }
-                )
-                .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = LocalIndication.current,
-                    enabled = true,
-                    onClick = { /* کاری انجام نده */ },
-                    onLongClick = {
-                        showMenu = true
-                    }
-                )
+        Box(
+            modifier = modifier,
+            contentAlignment = if (isOwnMessage) Alignment.CenterEnd else Alignment.CenterStart
         ) {
-            Column(
+            Surface(
+                shape = if (isOwnMessage) {
+                    RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp)
+                } else {
+                    RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
+                },
+                color = if (isOwnMessage) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant,
+                shadowElevation = 2.dp,
                 modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .clip(
+                        if (isOwnMessage) {
+                            RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp)
+                        } else {
+                            RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
+                        }
+                    )
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = LocalIndication.current,
+                        enabled = true,
+                        onClick = { /* کاری انجام نده */ },
+                        onLongClick = {
+                            showMenu = true
+                        }
+                    )
             ) {
-                ClickableText(
-                    text = annotatedText,
-                    onClick = { offset ->
-                        handleTextClick(annotatedText, offset, context, onNumberSelected)
-                    },
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = if (isOwnMessage) MaterialTheme.colorScheme.onPrimaryContainer
-                        else MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 20.sp
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 280.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
-                    Text(
-                        text = JalaliDateUtil.getTimeOnly(message.date),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isOwnMessage) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
+                    // استفاده از SelectionContainer برای قابلیت انتخاب متن
+                    SelectionContainer {
+                        ClickableText(
+                            text = annotatedText,
+                            onClick = { offset ->
+                                handleTextClick(
+                                    annotatedText = annotatedText,
+                                    offset = offset,
+                                    context = context,
+                                    onNumberSelected = { number ->
+                                        selectedText = number
+                                        showNumberSelectionDialog = true
+                                    },
+                                    onTextSelected = { text ->
+                                        selectedText = text
+                                        // می‌توانید اینجا منو یا action mode نمایش دهید
+                                        Log.d("MessageBubble", "📝 متن انتخاب شد: $text")
+                                    }
+                                )
+                            },
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = if (isOwnMessage) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurface,
+                                lineHeight = 20.sp
+                            )
+                        )
+                    }
 
-                    if (isOwnMessage) {
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = if (message.read) "✓✓" else "✓",
+                            text = JalaliDateUtil.getTimeOnly(message.date),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (message.read) MaterialTheme.colorScheme.primary
+                            color = if (isOwnMessage) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
+
+                        if (isOwnMessage) {
+                            Text(
+                                text = if (message.read) "✓✓" else "✓",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (message.read) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        // منو عملیات
-        if (showMenu) {
-            MessageActionMenu(
-                message = message,
-                context = context,
-                onDismiss = { showMenu = false }
-            )
+            // منو عملیات پیام
+            if (showMenu) {
+                MessageActionMenu(
+                    message = message,
+                    context = context,
+                    extractedNumbers = extractedNumbers,
+                    onDismiss = { showMenu = false },
+                    onShowNumbers = {
+                        showNumberSelectionDialog = true
+                        showMenu = false
+                    }
+                )
+            }
+
+            // دیالوگ انتخاب اعداد (اگر اعداد پیدا شده باشند)
+            if (showNumberSelectionDialog && extractedNumbers.isNotEmpty()) {
+                NumberSelectionDialog(
+                    numbers = extractedNumbers,
+                    onDismiss = { showNumberSelectionDialog = false },
+                    onNumberSelected = { number ->
+                        onNumberSelected(number)
+                        showNumberSelectionDialog = false
+                    }
+                )
+            }
         }
     }
 }
 
 /**
- * ایجاد متن حاشیه‌نویسی شده پیشرفته
+ * ایجاد متن حاشیه‌نویسی شده پیشرفته با تشخیص بهتر لینک‌ها
  */
 private fun createEnhancedAnnotatedText(text: String): AnnotatedString {
     return buildAnnotatedString {
-        // الگوی تشخیص لینک‌ها
+        // ✅ الگوی تشخیص لینک‌های بهبود یافته (شامل لینک‌های بدون پروتکل)
         val linkPattern = Pattern.compile(
-            "(?i)\\b(?:https?://|www\\.|ftp://)[\\w\\-._~:/?#\\[\\]@!\\$&'()*+,;=]+\\b|" +
+            // لینک‌های با پروتکل
+            "(?i)\\b(?:https?://|ftp://)[\\w\\-._~:/?#\\[\\]@!\\$&'()*+,;=]+\\b|" +
+                    // لینک‌های www (بدون پروتکل)
+                    "\\bwww\\.[\\w\\-._~:/?#\\[\\]@!\\$&'()*+,;=]+\\b|" +
+                    // دامنه‌های خام (مثلا adliran.ir/path)
+                    "\\b(?:[a-zA-Z0-9\\-]+\\.)+[a-zA-Z]{2,}(?:/[\\w\\-._~:/?#\\[\\]@!\\$&'()*+,;=]*)?\\b|" +
+                    // ایمیل‌ها
                     "\\b[\\w.]+@[\\w.]+\\.[a-zA-Z]{2,}\\b"
         )
 
-        // الگوی تشخیص اعداد
+        // ✅ الگوی تشخیص اعداد بهبود یافته
         val numberPattern = Pattern.compile(
-            "\\b\\d{3,}\\b|" +
-                    "\\b\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{2})?\\s*(?:تومان|ریال|USD|\\\$|€|£)?\\b|" +
-                    "\\b(?:\\+?98|0)?9\\d{9}\\b|" +
-                    "\\b\\d{4,6}(?:[-\\s]?\\d{4,6})?\\b"
+            // شماره تلفن‌های ایرانی
+            "\\b(?:\\+?98|0)?9\\d{9}\\b|" +
+                    // شماره‌های بین‌المللی
+                    "\\b\\+\\d{1,3}[\\s\\-]?\\d{4,14}\\b|" +
+                    // اعداد مالی (با جداکننده)
+                    "\\b\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{2})?\\s*(?:تومان|ریال|USD|\\\$|€|£|¥)?\\b|" +
+                    // اعداد عمومی (3 رقم به بالا)
+                    "\\b\\d{3,}\\b|" +
+                    // کدهای 4-6 رقمی
+                    "\\b\\d{4,6}(?:[\\-\\s]\\d{4,6})?\\b"
         )
 
         val linkMatcher = linkPattern.matcher(text)
@@ -213,7 +270,7 @@ private fun createEnhancedAnnotatedText(text: String): AnnotatedString {
             matches.add(Triple(numberMatcher.start(), numberMatcher.end(), "NUMBER:${numberMatcher.group()}"))
         }
 
-        // مرتب‌سازی
+        // مرتب‌سازی بر اساس موقعیت
         matches.sortBy { it.first }
 
         for ((start, end, tag) in matches) {
@@ -227,7 +284,16 @@ private fun createEnhancedAnnotatedText(text: String): AnnotatedString {
 
             if (tag.startsWith("LINK:")) {
                 val url = tag.substring(5)
-                pushStringAnnotation("URL", url)
+                // اضافه کردن پروتکل برای لینک‌های بدون پروتکل
+                val fullUrl = if (url.startsWith("www.")) {
+                    "https://$url"
+                } else if (!url.contains("://") && url.contains(".") && !url.contains("@")) {
+                    "https://$url"
+                } else {
+                    url
+                }
+
+                pushStringAnnotation("URL", fullUrl)
                 withStyle(
                     style = SpanStyle(
                         color = Color(0xFF2196F3),
@@ -245,7 +311,7 @@ private fun createEnhancedAnnotatedText(text: String): AnnotatedString {
                     style = SpanStyle(
                         color = Color(0xFF4CAF50),
                         fontWeight = FontWeight.Bold,
-                        background = Color(0xFFE8F5E9)
+                        background = Color(0xFFE8F5E9).copy(alpha = 0.3f)
                     )
                 ) {
                     append(matchedText)
@@ -264,15 +330,16 @@ private fun createEnhancedAnnotatedText(text: String): AnnotatedString {
 }
 
 /**
- * هندل کردن کلیک روی متن
+ * هندل کردن کلیک روی متن با پشتیبانی از انتخاب
  */
 private fun handleTextClick(
     annotatedText: AnnotatedString,
     offset: Int,
     context: Context,
-    onNumberSelected: (String) -> Unit
+    onNumberSelected: (String) -> Unit,
+    onTextSelected: (String) -> Unit = {}
 ) {
-    // بررسی لینک
+    // اولویت با لینک‌ها
     annotatedText.getStringAnnotations("URL", offset, offset).firstOrNull()?.let { annotation ->
         val url = annotation.item
         Log.d("MessageBubble", "🌐 لینک کلیک شد: $url")
@@ -280,7 +347,7 @@ private fun handleTextClick(
         return
     }
 
-    // بررسی عدد
+    // سپس اعداد
     annotatedText.getStringAnnotations("NUMBER", offset, offset).firstOrNull()?.let { annotation ->
         val number = annotation.item
         Log.d("MessageBubble", "🔢 عدد کلیک شد: $number")
@@ -288,8 +355,8 @@ private fun handleTextClick(
         return
     }
 
-    // کلیک روی متن معمولی - منو را نشان بده
-    Log.d("MessageBubble", "📝 کلیک روی متن معمولی")
+    // برای متن معمولی، انتخاب متن فعال می‌شود (از طریق SelectionContainer)
+    Log.d("MessageBubble", "📝 کلیک روی متن معمولی - انتخاب متن فعال شد")
 }
 
 /**
@@ -299,12 +366,16 @@ private fun handleTextClick(
 private fun MessageActionMenu(
     message: SmsEntity,
     context: Context,
-    onDismiss: () -> Unit
+    extractedNumbers: List<String>,
+    onDismiss: () -> Unit,
+    onShowNumbers: () -> Unit
 ) {
     DropdownMenu(
         expanded = true,
         onDismissRequest = onDismiss,
-        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surface)
+            .width(220.dp)
     ) {
         // کپی متن کامل
         DropdownMenuItem(
@@ -312,7 +383,7 @@ private fun MessageActionMenu(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("کپی متن")
+                    Text("کپی متن کامل")
                 }
             },
             onClick = {
@@ -321,24 +392,53 @@ private fun MessageActionMenu(
             }
         )
 
-        // استخراج و کپی اعداد
-        val numbers = extractAllNumbers(message.body)
-        if (numbers.isNotEmpty()) {
+        // نمایش و مدیریت اعداد
+        if (extractedNumbers.isNotEmpty()) {
+            Divider(modifier = Modifier.padding(vertical = 2.dp))
+
             DropdownMenuItem(
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .background(Color(0xFF4CAF50), RoundedCornerShape(4.dp))
+                                .padding(2.dp)
+                        ) {
+                            Text(
+                                text = extractedNumbers.size.toString(),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
                         Spacer(Modifier.width(8.dp))
-                        Text("کپی اعداد (${numbers.size})")
+                        Text("مدیریت اعداد (${extractedNumbers.size})")
                     }
                 },
                 onClick = {
-                    val allNumbers = numbers.joinToString("\n")
-                    copyToClipboard(context, allNumbers, "اعداد پیام")
+                    onShowNumbers()
+                }
+            )
+
+            // کپی همه اعداد
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.ContentCopy, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("کپی همه اعداد")
+                    }
+                },
+                onClick = {
+                    val allNumbers = extractedNumbers.joinToString("\n")
+                    copyToClipboard(context, allNumbers, "لیست اعداد")
                     onDismiss()
                 }
             )
         }
+
+        Divider(modifier = Modifier.padding(vertical = 4.dp))
 
         // اشتراک‌گذاری
         DropdownMenuItem(
@@ -373,21 +473,95 @@ private fun MessageActionMenu(
         )
     }
 }
-/**
- * کلاس کمکی برای ذخیره اطلاعات تطابق
- */
-private data class Match(
-    val start: Int,
-    val end: Int,
-    val text: String,
-    val isLink: Boolean
-)
 
 /**
- * استخراج تمام اعداد از متن
+ * دیالوگ انتخاب اعداد
  */
-private fun extractAllNumbers(text: String): List<String> {
-    val pattern = Pattern.compile("\\b\\d{3,}\\b")
+@Composable
+private fun NumberSelectionDialog(
+    numbers: List<String>,
+    onDismiss: () -> Unit,
+    onNumberSelected: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = "🔢 اعداد شناسایی شده (${numbers.size})")
+        },
+        text = {
+            Column {
+                numbers.forEachIndexed { index, number ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                onNumberSelected(number)
+                            },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFE8F5E9)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${index + 1}.",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF388E3C)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = number,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "کپی",
+                                tint = Color(0xFF388E3C),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    // کپی همه اعداد
+                    copyToClipboard(context, numbers.joinToString("\n"), "لیست اعداد")
+                    onDismiss()
+                }
+            ) {
+                Text("کپی همه")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("بستن")
+            }
+        }
+    )
+}
+
+/**
+ * استخراج تمام اعداد از متن (نسخه بهبود یافته)
+ */
+private fun extractAllNumbersFromText(text: String): List<String> {
+    val pattern = Pattern.compile(
+        "\\b(?:\\+?98|0)?9\\d{9}\\b|" + // شماره تلفن
+                "\\b\\+\\d{1,3}[\\s\\-]?\\d{4,14}\\b|" + // بین‌المللی
+                "\\b\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{2})?\\b|" + // اعداد مالی
+                "\\b\\d{3,}\\b" // اعداد عمومی
+    )
+
     val matcher = pattern.matcher(text)
     val numbers = mutableListOf<String>()
 
@@ -395,9 +569,8 @@ private fun extractAllNumbers(text: String): List<String> {
         numbers.add(matcher.group())
     }
 
-    return numbers
+    return numbers.distinct() // حذف اعداد تکراری
 }
-
 
 /**
  * کپی متن به کلیپ‌بورد
@@ -464,7 +637,6 @@ private fun showMessageInfo(context: Context, message: SmsEntity) {
 }
 
 // برای backward compatibility
-// برای backward compatibility
 @Composable
 fun SimpleMessageBubble(
     message: SmsEntity,
@@ -474,16 +646,16 @@ fun SimpleMessageBubble(
     val isMe = message.type == 2
     val context = LocalContext.current
 
-    // استفاده از AdvancedMessageBubble با هندلر سفارشی
-    Box(
+    // استفاده از AdvancedMessageBubble
+    AdvancedMessageBubble(
+        message = message,
+        isOwnMessage = isMe,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
-        contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
-    ) {
-        // کپی پیاده‌سازی ساده‌تر یا استفاده از AdvancedMessageBubble
-        // ...
-    }
+        context = context,
+        onNumberSelected = onNumberSelected
+    )
 }
 
 // Alias برای سازگاری اگر قبلاً از MessageBubble استفاده شده
