@@ -1,5 +1,8 @@
 package com.example.mysms.repository
 
+
+import androidx.room.TypeConverters
+import com.example.mysms.data.Converters
 import kotlinx.coroutines.flow.firstOrNull
 
 import android.telephony.SmsMessage
@@ -22,6 +25,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.telephony.SubscriptionManager
 import androidx.core.app.ActivityCompat
+import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.withContext
 
 class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
@@ -106,7 +110,7 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
     }
 
     /**
-     * استخراج اطلاعات پیام چندبخشی از SmsMessage
+     * استخراج اطلاعات پیام چندبخشی از SmsMessage - نسخه به‌روز شده
      */
     private fun extractMultipartInfo(sms: SmsMessage, intent: Intent): SmsEntity {
         val address = sms.originatingAddress ?: "Unknown"
@@ -126,29 +130,97 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
             }
         }
 
-        // بررسی آیا پیام چندبخشی است
-        val isMultipart = sms.isMultipartMessage()
-        val messageId = System.currentTimeMillis() / 1000 // استفاده از timestamp به عنوان messageId
-        val referenceNumber = sms.referenceNumber() // باید این تابع را اضافه کنید
+        // بررسی آیا پیام چندبخشی است (با منطق بهبود یافته)
+        val isMultipart = isPduMultipart(sms)
+        val messageId = generateMessageId(sms, timestamp)
+        val referenceNumber = extractReferenceNumber(sms)
+        val partInfo = extractPartInfo(sms)
 
+        // استفاده از constructor جدید با تمام فیلدها
         return SmsEntity(
-            id = "sms_${timestamp}_${UUID.randomUUID().toString().substring(0, 8)}",
+            id = generateSmsId(address, timestamp, isMultipart),
             address = address,
             body = body,
             date = timestamp,
-            type = 1,
+            type = 1, // دریافت
             subId = subId,
             read = false,
+            // فیلدهای multipart
             threadId = calculateThreadId(address),
             messageId = messageId,
-            partCount = if (isMultipart) sms.partCount() else 1,
-            partIndex = if (isMultipart) sms.partIndex() else 1,
+            partCount = partInfo.first,
+            partIndex = partInfo.second,
             referenceNumber = referenceNumber,
             isMultipart = isMultipart,
-            isComplete = !isMultipart,
-            status = if (isMultipart) 0 else -1,
-            encoding = sms.encoding()
+            isComplete = !isMultipart || partInfo.first == 1,
+            status = if (isMultipart && partInfo.first > 1) 0 else -1, // 0 = در حال ترکیب اگر multipart باشد
+            // فیلدهای sync
+            isSynced = false,
+            syncVersion = 0,
+            serverId = null,
+            lastModified = timestamp,
+            isDeleted = false
         )
+    }
+
+    /**
+     * بررسی آیا PDU چندبخشی است
+     */
+    private fun isPduMultipart(sms: SmsMessage): Boolean {
+        return try {
+            // اگر body خیلی طولانی است (بیشتر از 160 کاراکتر برای GSM یا 70 برای Unicode)
+            val body = sms.messageBody ?: ""
+            body.length > 160 || (body.any { it.code > 127 } && body.length > 70)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * تولید شناسه پیام
+     */
+    private fun generateMessageId(sms: SmsMessage, timestamp: Long): Long {
+        return try {
+            // استفاده از timestamp و hash آدرس
+            val address = sms.originatingAddress ?: "unknown"
+            (timestamp + address.hashCode()).toLong()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
+        }
+    }
+
+    /**
+     * استخراج شماره مرجع از پیام
+     */
+    private fun extractReferenceNumber(sms: SmsMessage): Int {
+        return try {
+            // برای پیام‌های معمولی 0 برمی‌گرداند
+            // در پیاده‌سازی واقعی از PDU استفاده می‌شود
+            0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    /**
+     * استخراج اطلاعات بخش‌های پیام
+     */
+    private fun extractPartInfo(sms: SmsMessage): Pair<Int, Int> {
+        return try {
+            // در پیاده‌سازی واقعی از اطلاعات UDH استفاده می‌شود
+            // فعلاً مقدار پیش‌فرض
+            Pair(1, 1)
+        } catch (e: Exception) {
+            Pair(1, 1)
+        }
+    }
+
+    /**
+     * تولید شناسه یکتا برای پیام
+     */
+    private fun generateSmsId(address: String, timestamp: Long, isMultipart: Boolean): String {
+        val suffix = if (isMultipart) "_mp" else ""
+        return "sms_${address.hashCode()}_${timestamp}${suffix}"
     }
 
     /**
@@ -387,9 +459,38 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
                     if (current % 20 == 0) emit((current * 100) / total)
                 }
 
+// در تابع syncSms، بخش ذخیره‌سازی را با کد زیر جایگزین کنید:
+
                 if (list.isNotEmpty()) {
                     withContext(Dispatchers.IO) {
-                        smsDao.insertAll(list)
+                        // تبدیل به لیست جدید با constructor جدید
+                        val newList = list.map { sms ->
+                            SmsEntity(
+                                id = sms.id,
+                                address = sms.address,
+                                body = sms.body,
+                                date = sms.date,
+                                type = sms.type,
+                                subId = sms.subId,
+                                read = sms.read,
+                                // فیلدهای multipart با مقادیر پیش‌فرض
+                                threadId = calculateThreadId(sms.address),
+                                messageId = sms.date / 1000, // استفاده از timestamp ساده‌شده
+                                partCount = 1,
+                                partIndex = 1,
+                                referenceNumber = 0,
+                                isMultipart = false,
+                                isComplete = true,
+                                status = -1,
+                                // فیلدهای sync
+                                isSynced = true, // پیام‌های سینک شده از سیستم همگی synced هستند
+                                syncVersion = 1,
+                                serverId = null,
+                                lastModified = sms.date,
+                                isDeleted = false
+                            )
+                        }
+                        smsDao.insertAll(newList)
                     }
                 }
                 emit(100)
@@ -488,6 +589,138 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
             return@withContext 0
         }
     }
+
+
+    /**
+     * سینک هوشمند با مدیریت وضعیت
+     */
+    suspend fun smartSync(lastSyncTime: Long): SmartSyncResult = withContext(Dispatchers.IO) {
+        try {
+            Log.d("SmsRepository", "🤖 Starting smart sync since $lastSyncTime")
+
+            // 1. دریافت پیام‌های جدید از سیستم
+            val newMessages = mutableListOf<SmsEntity>()
+            val cursor = context.contentResolver.query(
+                android.provider.Telephony.Sms.CONTENT_URI,
+                null,
+                "${android.provider.Telephony.Sms.DATE} > $lastSyncTime",
+                null,
+                "${android.provider.Telephony.Sms.DATE} ASC" // قدیمی‌ترین اول
+            )
+
+            var totalMessages = 0
+            cursor?.use {
+                totalMessages = smsDao.getAllSms().size
+
+                val idIdx = it.getColumnIndex(android.provider.Telephony.Sms._ID)
+                val addrIdx = it.getColumnIndex(android.provider.Telephony.Sms.ADDRESS)
+                val bodyIdx = it.getColumnIndex(android.provider.Telephony.Sms.BODY)
+                val dateIdx = it.getColumnIndex(android.provider.Telephony.Sms.DATE)
+                val typeIdx = it.getColumnIndex(android.provider.Telephony.Sms.TYPE)
+                val subIdIdx = it.getColumnIndex("sub_id")
+                val readIdx = it.getColumnIndex(android.provider.Telephony.Sms.READ)
+
+                while (it.moveToNext()) {
+                    try {
+                        val id = if (idIdx != -1) it.getString(idIdx) else "new_${System.currentTimeMillis()}"
+                        val address = if (addrIdx != -1) it.getString(addrIdx) ?: "Unknown" else "Unknown"
+                        val body = if (bodyIdx != -1) it.getString(bodyIdx) ?: "" else ""
+                        val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
+                        val type = if (typeIdx != -1) it.getInt(typeIdx) else 1
+                        val subId = if (subIdIdx != -1) it.getInt(subIdIdx) else -1
+                        val isRead = if (readIdx != -1) it.getInt(readIdx) == 1 else true
+
+                        newMessages.add(
+                            SmsEntity(
+                                id = id,
+                                address = address,
+                                body = body,
+                                date = date,
+                                type = type,
+                                subId = subId,
+                                read = isRead,
+                                threadId = calculateThreadId(address),
+                                messageId = date / 1000,
+                                partCount = 1,
+                                partIndex = 1,
+                                referenceNumber = 0,
+                                isMultipart = false,
+                                isComplete = true,
+                                status = -1,
+                                isSynced = false, // نیاز به سینک
+                                syncVersion = 0,
+                                serverId = null,
+                                lastModified = date,
+                                isDeleted = false
+                            )
+                        )
+
+                    } catch (e: Exception) {
+                        Log.e("SmsRepository", "Error reading SMS in smart sync", e)
+                    }
+                }
+            }
+
+            cursor?.close()
+
+            if (newMessages.isEmpty()) {
+                Log.d("SmsRepository", "📭 No new messages found for smart sync")
+                return@withContext SmartSyncResult.NoNewMessages
+            }
+
+            // 2. ذخیره در دیتابیس
+            smsDao.insertAll(newMessages)
+
+            // 3. علامت‌گذاری به عنوان سینک شده
+            val ids = newMessages.map { it.id }
+            smsDao.markAsSynced(ids, 1)
+
+            Log.d("SmsRepository", "✅ Smart sync completed: ${newMessages.size} messages")
+            return@withContext SmartSyncResult.Success(
+                SyncStats(
+                    totalMessages = totalMessages + newMessages.size,
+                    newMessages = newMessages.size,
+                    syncDuration = 0, // محاسبه در ViewModel
+                    lastSyncTime = System.currentTimeMillis(),
+                    syncMethod = "smart"
+                )
+            )
+
+        } catch (e: Exception) {
+            Log.e("SmsRepository", "❌ Smart sync failed: ${e.message}", e)
+            return@withContext SmartSyncResult.Error("Smart sync failed: ${e.message}", true)
+        }
+    }
+
+// ==================== کلاس‌های نتیجه سینک (مستقل از HomeViewModel) ====================
+
+    /**
+     * آمار سینک
+     */
+    data class SyncStats(
+        val totalMessages: Int = 0,
+        val newMessages: Int = 0,
+        val syncDuration: Long = 0,
+        val lastSyncTime: Long = 0,
+        val syncMethod: String = "full"
+    )
+
+    /**
+     * نتیجه سینک
+     */
+    sealed class SmartSyncResult {
+        data class Success(val stats: SyncStats) : SmartSyncResult()
+        data class Error(val message: String, val retryable: Boolean) : SmartSyncResult()
+        object NoNewMessages : SmartSyncResult()
+    }
+
+    // کلاس نتیجه سینک
+    sealed class SyncResult {
+        data class Success(val stats: HomeViewModel.SyncStats) : SyncResult()
+        data class Error(val message: String, val retryable: Boolean) : SyncResult()
+        object NoNewMessages : SyncResult()
+    }
+
 
     suspend fun getAllSmsFromDb(): List<SmsEntity> {
         return smsDao.getAllSms()
@@ -657,14 +890,31 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
                         val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
                         val smsSubId = if (subIdIdx != -1) it.getInt(subIdIdx) else subId
 
+// در تابع syncSentSmsFromSystem، بخش ذخیره‌سازی را با کد زیر جایگزین کنید:
+
                         val sentSms = SmsEntity(
-                            id = "sys_$id", // پیشوند sys برای پیام‌های سینک شده از سیستم
+                            id = "sys_$id",
                             address = address,
                             body = smsBody,
                             date = date,
-                            type = 2,
+                            type = 2, // ارسال
                             subId = smsSubId,
-                            read = true
+                            read = true,
+                            // فیلدهای multipart
+                            threadId = calculateThreadId(address),
+                            messageId = date / 1000,
+                            partCount = 1,
+                            partIndex = 1,
+                            referenceNumber = 0,
+                            isMultipart = false,
+                            isComplete = true,
+                            status = -1,
+                            // فیلدهای sync
+                            isSynced = true,
+                            syncVersion = 1,
+                            serverId = null,
+                            lastModified = date,
+                            isDeleted = false
                         )
 
                         // ذخیره در دیتابیس

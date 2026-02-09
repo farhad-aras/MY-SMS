@@ -2,35 +2,116 @@ package com.example.mysms.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
+import androidx.room.Ignore
+import androidx.room.TypeConverters
 
 @Entity(tableName = "sms_table")
+@TypeConverters(Converters::class)
 data class SmsEntity(
-    @PrimaryKey val id: String,
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+
+    @ColumnInfo(name = "address")
     val address: String,
+
+    @ColumnInfo(name = "body")
     val body: String,
+
+    @ColumnInfo(name = "date")
     val date: Long,
-    val type: Int,
+
+    @ColumnInfo(name = "type")
+    val type: Int, // 1 = دریافت، 2 = ارسال
+
+    @ColumnInfo(name = "subId")
     val subId: Int,
-    val read: Boolean,
+
+    @ColumnInfo(name = "read")
+    val read: Boolean = false,
+
     // ==================== فیلدهای جدید برای پشتیبانی از پیام‌های چندبخشی ====================
-    val threadId: Long = 0,                    // شناسه ترد برای گروه‌بندی مکالمات
-    val messageId: Long = 0,                   // شناسه یکتا برای هر پیام کامل
-    val partCount: Int = 1,                    // تعداد کل قطعات (پیش‌فرض 1)
-    val partIndex: Int = 1,                    // شماره قطعه فعلی (پیش‌فرض 1)
-    val referenceNumber: Int = 0,              // شماره مرجع برای ارتباط قطعات
-    val isMultipart: Boolean = false,          // آیا پیام چندبخشی است؟
-    val isComplete: Boolean = true,            // آیا پیام کامل است؟
-    val contentType: String = "text/plain",    // نوع محتوا
-    val encoding: String = "UTF-8",            // encoding پیام
-    val status: Int = -1,                       // وضعیت پیام (-1=ناشناخته, 0=دریافت شده, 1=درحال ترکیب, 2=کامل)
+    @ColumnInfo(name = "threadId", defaultValue = "0")
+    val threadId: Long = 0,
+
+    @ColumnInfo(name = "messageId", defaultValue = "0")
+    val messageId: Long = 0,
+
+    @ColumnInfo(name = "partCount", defaultValue = "1")
+    val partCount: Int = 1,
+
+    @ColumnInfo(name = "partIndex", defaultValue = "1")
+    val partIndex: Int = 1,
+
+    @ColumnInfo(name = "referenceNumber", defaultValue = "0")
+    val referenceNumber: Int = 0,
+
+    @ColumnInfo(name = "isMultipart", defaultValue = "0")
+    val isMultipart: Boolean = false,
+
+    @ColumnInfo(name = "isComplete", defaultValue = "1")
+    val isComplete: Boolean = true,
+
+    @ColumnInfo(name = "contentType", defaultValue = "'text/plain'")
+    val contentType: String = "text/plain",
+
+    @ColumnInfo(name = "encoding", defaultValue = "'UTF-8'")
+    val encoding: String = "UTF-8",
+
+    @ColumnInfo(name = "status", defaultValue = "-1")
+    val status: Int = -1,
 
     // ==================== فیلدهای جدید برای مدیریت سینک هوشمند ====================
-    val isSynced: Boolean = false,              // آیا در سینک هوشمند ذخیره شده؟
-    val syncVersion: Int = 0,                   // نسخه سینک (برای مدیریت تغییرات)
-    val serverId: String? = null,               // شناسه یکتا در سرور (اگر استفاده شود) - NULLABLE
-    val lastModified: Long = 0L,                // زمان آخرین تغییر (برای سینک افزایشی)
-    val isDeleted: Boolean = false              // آیا حذف شده؟ (soft delete)
-    ) {
+    @ColumnInfo(name = "isSynced", defaultValue = "0")
+    val isSynced: Boolean = false,
+
+    @ColumnInfo(name = "syncVersion", defaultValue = "0")
+    val syncVersion: Int = 0,
+
+    @ColumnInfo(name = "serverId")
+    val serverId: String? = null,
+
+    @ColumnInfo(name = "lastModified", defaultValue = "0")
+    val lastModified: Long = 0L,
+
+    @ColumnInfo(name = "isDeleted", defaultValue = "0")
+    val isDeleted: Boolean = false
+) {
+    @Ignore
+    constructor(
+        id: String,
+        address: String,
+        body: String,
+        date: Long,
+        type: Int,
+        subId: Int,
+        read: Boolean
+    ) : this(
+        id = id,
+        address = address,
+        body = body,
+        date = date,
+        type = type,
+        subId = subId,
+        read = read,
+        threadId = 0,
+        messageId = 0,
+        partCount = 1,
+        partIndex = 1,
+        referenceNumber = 0,
+        isMultipart = false,
+        isComplete = true,
+        contentType = "text/plain",
+        encoding = "UTF-8",
+        status = -1,
+        isSynced = false,
+        syncVersion = 0,
+        serverId = null,
+        lastModified = date,
+        isDeleted = false
+    )
+
     // تابع کمکی برای بررسی آیا این قطعه بخشی از یک پیام چندبخشی است
     fun isPartOfMultipart(): Boolean = isMultipart && partCount > 1
 
@@ -75,7 +156,11 @@ data class SmsEntity(
      * @param syncVersion نسخه سینک
      */
     fun markAsSynced(syncVersion: Int = 1): SmsEntity =
-        this.copy(isSynced = true, syncVersion = syncVersion, lastModified = System.currentTimeMillis())
+        this.copy(
+            isSynced = true,
+            syncVersion = syncVersion,
+            lastModified = System.currentTimeMillis()
+        )
 
     /**
      * علامت‌گذاری پیام به عنوان حذف شده (soft delete)
@@ -96,4 +181,13 @@ data class SmsEntity(
         this.address == other.address &&
                 this.body == other.body &&
                 Math.abs(this.date - other.date) < 1000 // اختلاف کمتر از 1 ثانیه
+
+    companion object {
+        const val TYPE_INBOX = 1
+        const val TYPE_SENT = 2
+        const val STATUS_UNKNOWN = -1
+        const val STATUS_RECEIVED = 0
+        const val STATUS_COMBINING = 1
+        const val STATUS_COMPLETE = 2
+    }
 }

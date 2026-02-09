@@ -1,5 +1,8 @@
 package com.example.mysms.viewmodel
 
+import com.example.mysms.data.DatabaseStats
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import com.example.mysms.data.MultipartKey
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.TimeoutCancellationException
@@ -22,6 +25,7 @@ import com.example.mysms.data.SmsEntity
 import com.example.mysms.repository.SmsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
@@ -267,6 +271,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+
+    /**
+     * شروع پاکسازی دوره‌ای دیتابیس
+     */
+    private fun startPeriodicCleanup() {
+        viewModelScope.launch {
+            while (isActive) {
+                try {
+                    delay(24 * 60 * 60 * 1000) // هر 24 ساعت
+
+                    // 1. پاکسازی پیام‌های حذف شده قدیمی
+                    cleanupOldDeletedMessages()
+
+                    // 2. ترکیب پیام‌های چندبخشی ناقص
+                    combineCompleteMultipartMessages()
+
+                    // 3. دریافت آمار برای گزارش
+                    val stats = getDatabaseStatistics()
+                    Log.d("HomeViewModel", "📊 Database stats: total=${stats.total}, pendingSync=${stats.pendingSync}, incompleteMultipart=${stats.incompleteMultipart}")
+
+                } catch (e: Exception) {
+                    Log.e("HomeViewModel", "❌ Error in periodic cleanup", e)
+                    delay(60 * 60 * 1000) // در صورت خطا، 1 ساعت صبر کن
+                }
+            }
+        }
+    }
+
     /**
      * سینک افزایشی پیام‌های جدید
      */
@@ -336,6 +368,78 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * شروع سینک هوشمند (انتخاب خودکار بین full و incremental)
      */
+
+    // ==================== توابع جدید برای کار با دیتابیس Migration یافته ====================
+
+    /**
+     * دریافت پیام‌هایی که نیاز به سینک دارند
+     */
+    fun getPendingSyncMessages(limit: Int = 100): Flow<List<SmsEntity>> {
+        return flow {
+            withContext(Dispatchers.IO) {
+                val lastSync = _lastSyncTime.value
+                val messages = smsDao.getMessagesForSync(lastSync, limit)
+                emit(messages)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    /**
+     * دریافت آمار دیتابیس
+     */
+    suspend fun getDatabaseStatistics(): DatabaseStats {
+        return withContext(Dispatchers.IO) {
+            smsDao.getDatabaseStats()
+        }
+    }
+
+    /**
+     * پاکسازی پیام‌های حذف شده قدیمی
+     */
+    fun cleanupOldDeletedMessages() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val deletedCount = smsDao.cleanupDeletedMessages()
+                Log.d("HomeViewModel", "🧹 Cleaned up $deletedCount old deleted messages")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error cleaning up deleted messages", e)
+            }
+        }
+    }
+
+    /**
+     * Soft delete یک پیام
+     */
+    fun softDeleteMessage(messageId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                smsDao.softDeleteById(messageId)
+                Log.d("HomeViewModel", "🗑️ Message $messageId soft deleted")
+
+                // رفرش لیست
+                refreshSmsList()
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error soft deleting message", e)
+            }
+        }
+    }
+
+    /**
+     * دریافت آخرین زمان سینک از دیتابیس
+     */
+    suspend fun refreshLastSyncTimeFromDb() {
+        withContext(Dispatchers.IO) {
+            try {
+                val lastSync = smsDao.getLastSyncTime() ?: 0L
+                _lastSyncTime.value = lastSync
+                Log.d("HomeViewModel", "🔄 Last sync time from DB: $lastSync")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error getting last sync time from DB", e)
+            }
+        }
+    }
+
+
     fun startSmartSync() {
         viewModelScope.launch {
             try {
@@ -851,7 +955,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun markMessageAsRead(messageId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                smsDao.markSingleMessageAsRead(messageId)
+                // استفاده از تابع جدید با نام صحیح
+                smsDao.markMessageAsRead(messageId)
                 Log.d("HomeViewModel", "✅ Message $messageId marked as read")
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "❌ Error marking message as read", e)
@@ -1240,6 +1345,58 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("HomeViewModel", "❌ Error checking default SMS app: ${e.message}", e)
                 _isDefaultSmsApp.value = false
             }
+        }
+    }
+
+    init {
+        try {
+            Log.d("HomeViewModel", "🟢 ViewModel init started")
+
+            // 1. ابتدا شناسه سیم‌کارت‌ها
+            refreshSimIds()
+
+            // 2. بازیابی پیش‌نویس‌ها
+            restoreDrafts()
+
+            // 3. بارگذاری نام‌های ذخیره شده تب‌ها
+            loadTabNames()
+
+            // 4. بارگذاری وضعیت expand/collapse تاریخ‌ها
+            loadDateExpansionState()
+
+            // 5. بارگذاری وضعیت سینک
+            loadSyncState()
+
+            // 6. بارگذاری آخرین زمان سینک از دیتابیس
+            viewModelScope.launch {
+                refreshLastSyncTimeFromDb()
+            }
+
+            // 7. بارگذاری وضعیت Onboarding
+            checkOnboardingStatus()
+
+            // 8. بررسی وضعیت برنامه پیش‌فرض
+            checkDefaultSmsAppStatus()
+
+            // 9. شروع سینک هوشمند پس‌زمینه
+            startBackgroundSmartSyncCheck()
+
+            // 10. شروع پاکسازی دوره‌ای
+            startPeriodicCleanup()
+
+            // 11. مشاهده دیتابیس (همه پیام‌ها و مکالمات)
+            viewModelScope.launch {
+                // مشاهده تمام پیام‌ها (برای صفحه چت)
+                launch { observeAllSms() }
+                // مشاهده مکالمات (برای صفحه اصلی)
+                launch { observeConversations() }
+            }
+
+            Log.d("HomeViewModel", "✅ ViewModel init completed")
+        } catch (e: Exception) {
+            Log.e("HomeViewModel", "💥 Error in init: ${e.message}", e)
+            _smsList.value = emptyList()
+            _conversations.value = emptyList()
         }
     }
 
