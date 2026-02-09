@@ -141,14 +141,14 @@ class ForegroundSmsService : Service() {
     }
 
     private fun startBackgroundTasks() {
-        // 1. چک دوره‌ای برای پیام‌های جدید
+        // 1. چک دوره‌ای برای پیام‌های جدید با سینک هوشمند
         serviceScope.launch {
             while (isActive) {
                 try {
-                    Log.d(TAG, "🔄 Checking for new messages...")
+                    Log.d(TAG, "🔄 Background: Checking for new messages...")
 
-                    // 2. به صورت دوره‌یی SMS Provider را چک کن
-                    //checkSmsProvider()
+                    // 2. سینک افزایشی پیام‌های جدید
+                    performBackgroundIncrementalSync()
 
                     delay(5 * 60 * 1000) // هر 5 دقیقه
 
@@ -157,6 +157,82 @@ class ForegroundSmsService : Service() {
                     delay(10 * 60 * 1000) // اگر خطا داشت، 10 دقیقه صبر کن
                 }
             }
+        }
+
+        // 3. چک سلامت سرویس هر 30 دقیقه
+        serviceScope.launch {
+            while (isActive) {
+                try {
+                    delay(30 * 60 * 1000) // هر 30 دقیقه
+                    Log.d(TAG, "🏥 Background: Service health check")
+                    // می‌توانید لاگ‌های اضافی یا چک‌های سلامت اضافه کنید
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Error in health check", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * انجام سینک افزایشی در پس‌زمینه
+     */
+    private suspend fun performBackgroundIncrementalSync() {
+        try {
+            // 1. دریافت زمان آخرین سینک از SharedPreferences
+            val prefs = getSharedPreferences("sync_prefs", Context.MODE_PRIVATE)
+            val lastSyncTime = prefs.getLong("last_sync_time", 0L)
+
+            Log.d(TAG, "📡 Background sync: lastSync=$lastSyncTime")
+
+            // 2. فقط اگر بیش از 1 دقیقه از آخرین سینک گذشته باشد
+            val now = System.currentTimeMillis()
+            if (now - lastSyncTime < 60 * 1000) {
+                Log.d(TAG, "⏭️ Background sync skipped: too recent")
+                return
+            }
+
+            // 3. خواندن پیام‌های جدید از SMS Provider
+            val cursor = contentResolver.query(
+                android.provider.Telephony.Sms.CONTENT_URI,
+                null,
+                "${android.provider.Telephony.Sms.DATE} > $lastSyncTime",
+                null,
+                "${android.provider.Telephony.Sms.DATE} DESC LIMIT 20"
+            )
+
+            var newMessageCount = 0
+            cursor?.use {
+                val addrIdx = it.getColumnIndex(android.provider.Telephony.Sms.ADDRESS)
+                val bodyIdx = it.getColumnIndex(android.provider.Telephony.Sms.BODY)
+                val dateIdx = it.getColumnIndex(android.provider.Telephony.Sms.DATE)
+
+                while (it.moveToNext()) {
+                    val address = if (addrIdx != -1) it.getString(addrIdx) else "Unknown"
+                    val body = if (bodyIdx != -1) it.getString(bodyIdx) else ""
+                    val date = if (dateIdx != -1) it.getLong(dateIdx) else now
+
+                    // نمایش نوتیفیکیشن برای پیام جدید
+                    if (body.isNotEmpty() && address != "Unknown") {
+                        showNewMessageNotification(address, body)
+                        newMessageCount++
+                    }
+                }
+            }
+
+            cursor?.close()
+
+            // 4. آپدیت زمان آخرین چک
+            if (newMessageCount > 0) {
+                prefs.edit().putLong("last_background_check", now).apply()
+                Log.d(TAG, "✅ Background sync: Found $newMessageCount new messages")
+            } else {
+                Log.d(TAG, "📭 Background sync: No new messages")
+            }
+
+        } catch (e: SecurityException) {
+            Log.e(TAG, "🔒 Background sync permission error", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Background sync error", e)
         }
     }
 
@@ -339,12 +415,14 @@ class ForegroundSmsService : Service() {
                 )
             }
 
-            // Intent برای باز کردن چت
+// Intent برای باز کردن چت با notification_id
             val chatIntent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 putExtra("open_chat", true)
                 putExtra("contact_address", address)
                 putExtra("notification_clicked", true)
+                // اضافه کردن notification_id برای حذف نوتیفیکیشن در MainActivity
+                putExtra("notification_id", address.hashCode() and 0x7FFFFFFF)
             }
 
             val chatPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -371,7 +449,7 @@ class ForegroundSmsService : Service() {
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
                 .setContentIntent(chatPendingIntent)
-                .setAutoCancel(true)
+                .setAutoCancel(false) // چون در MainActivity حذف می‌کنیم
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setDefaults(NotificationCompat.DEFAULT_ALL)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -431,12 +509,14 @@ class ForegroundSmsService : Service() {
                 notificationManager.createNotificationChannel(messageChannel)
             }
 
-            // Intent برای باز کردن چت
+// Intent برای باز کردن چت با notification_id
             val chatIntent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 putExtra("open_chat", true)
                 putExtra("contact_address", address)
                 putExtra("notification_clicked", true)
+                // اضافه کردن notification_id برای حذف نوتیفیکیشن در MainActivity
+                putExtra("notification_id", address.hashCode() and 0x7FFFFFFF)
             }
 
             val chatPendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -544,7 +624,7 @@ class ForegroundSmsService : Service() {
                 .setSmallIcon(android.R.drawable.ic_dialog_email)
                 .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
                 .setContentIntent(chatPendingIntent)
-                .setAutoCancel(true)
+                .setAutoCancel(false) // چون در MainActivity حذف می‌کنیم
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)

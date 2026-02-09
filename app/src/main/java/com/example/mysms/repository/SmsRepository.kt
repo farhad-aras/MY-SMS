@@ -399,6 +399,96 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
         }
     }.flowOn(Dispatchers.IO)
 
+    // ==================== سینک افزایشی پیام‌های جدید ====================
+
+    /**
+     * سینک افزایشی - فقط پیام‌های جدید از آخرین سینک
+     * @param lastSyncTime زمان آخرین سینک (milliseconds)
+     * @return تعداد پیام‌های جدید
+     */
+    suspend fun syncNewMessages(lastSyncTime: Long): Int = withContext(Dispatchers.IO) {
+        try {
+            Log.d("SmsRepository", "🚀 Starting incremental sync since $lastSyncTime")
+
+            // اگر lastSyncTime صفر است، تمام پیام‌ها را بگیر
+            val selection = if (lastSyncTime > 0) {
+                "${android.provider.Telephony.Sms.DATE} > $lastSyncTime"
+            } else {
+                null
+            }
+
+            val cursor = context.contentResolver.query(
+                android.provider.Telephony.Sms.CONTENT_URI,
+                null, selection, null,
+                "${android.provider.Telephony.Sms.DATE} DESC"
+            )
+
+            var newMessageCount = 0
+            val newMessages = mutableListOf<com.example.mysms.data.SmsEntity>()
+
+            cursor?.use {
+                val idIdx = it.getColumnIndex(android.provider.Telephony.Sms._ID)
+                val addrIdx = it.getColumnIndex(android.provider.Telephony.Sms.ADDRESS)
+                val bodyIdx = it.getColumnIndex(android.provider.Telephony.Sms.BODY)
+                val dateIdx = it.getColumnIndex(android.provider.Telephony.Sms.DATE)
+                val typeIdx = it.getColumnIndex(android.provider.Telephony.Sms.TYPE)
+                val subIdIdx = it.getColumnIndex("sub_id")
+                val readIdx = it.getColumnIndex(android.provider.Telephony.Sms.READ)
+
+                while (it.moveToNext()) {
+                    try {
+                        val id = if (idIdx != -1) it.getString(idIdx) else "new_${System.currentTimeMillis()}_$newMessageCount"
+                        val address = if (addrIdx != -1) it.getString(addrIdx) ?: "Unknown" else "Unknown"
+                        val body = if (bodyIdx != -1) it.getString(bodyIdx) ?: "" else ""
+                        val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
+                        val type = if (typeIdx != -1) it.getInt(typeIdx) else 1
+                        val subId = if (subIdIdx != -1) it.getInt(subIdIdx) else -1
+                        val isRead = if (readIdx != -1) it.getInt(readIdx) == 1 else true
+
+                        newMessages.add(
+                            com.example.mysms.data.SmsEntity(
+                                id = id,
+                                address = address,
+                                body = body,
+                                date = date,
+                                type = type,
+                                subId = subId,
+                                read = isRead,
+                                isSynced = true,
+                                syncVersion = 1,
+                                lastModified = date
+                            )
+                        )
+
+                        newMessageCount++
+
+                        if (newMessageCount % 10 == 0) {
+                            Log.d("SmsRepository", "📥 Incremental sync: $newMessageCount new messages so far")
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e("SmsRepository", "Error reading new SMS", e)
+                    }
+                }
+            }
+
+            // ذخیره پیام‌های جدید
+            if (newMessages.isNotEmpty()) {
+                smsDao.insertAll(newMessages)
+                Log.d("SmsRepository", "✅ Incremental sync completed: $newMessageCount new messages saved")
+            } else {
+                Log.d("SmsRepository", "📭 No new messages since $lastSyncTime")
+            }
+
+            cursor?.close()
+            return@withContext newMessageCount
+
+        } catch (e: Exception) {
+            Log.e("SmsRepository", "❌ Incremental sync failed: ${e.message}", e)
+            return@withContext 0
+        }
+    }
+
     suspend fun getAllSmsFromDb(): List<SmsEntity> {
         return smsDao.getAllSms()
     }

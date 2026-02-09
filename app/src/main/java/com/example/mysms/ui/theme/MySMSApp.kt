@@ -84,6 +84,7 @@ import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.text.isNullOrBlank
+import androidx.compose.material.icons.filled.Refresh
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -858,7 +859,31 @@ fun MySMSApp() {
                                 showWhitelistManagerDialog()
                             }
                         )
-
+// آیتم رفرش هوشمند
+                        Divider()
+                        DropdownMenuItem(
+                            text = { Text("🔄 سینک هوشمند") },
+                            onClick = {
+                                showMenu = false
+                                if (!isSyncing && !vm.isSmartSyncing.value) {
+                                    coroutineScope.launch {
+                                        Toast.makeText(context, "در حال سینک هوشمند...", Toast.LENGTH_SHORT).show()
+                                        vm.startSmartSync()
+                                        listRefreshKey++
+                                        delay(500)
+                                        // Toast پیام جدید در خود ViewModel نمایش داده می‌شود
+                                    }
+                                } else {
+                                    Toast.makeText(context, "در حال سینک... لطفاً صبر کنید", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painter = rememberVectorPainter(Icons.Default.Refresh),
+                                    contentDescription = null
+                                )
+                            }
+                        )
 // دیالوگ تست پاسخ سریع
                         if (showTestDialog) {
                             androidx.compose.material3.AlertDialog(
@@ -949,6 +974,25 @@ fun MySMSApp() {
                 )
             }
 
+            // Progress Indicator برای سینک هوشمند
+            if (vm.isSmartSyncing.value) {
+                LinearProgressIndicator(
+                    progress = vm.smartSyncProgress.value / 100f,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp),
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "سینک هوشمند در حال انجام...",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
             // وضعیت پیام‌ها
             Row(
                 modifier = Modifier
@@ -970,6 +1014,24 @@ fun MySMSApp() {
                             fontSize = 12.sp
                         )
                     }
+                }
+
+                // نمایش وضعیت سینک هوشمند
+                if (vm.syncStats.value.lastSyncTime > 0) {
+                    val minutesAgo = (System.currentTimeMillis() - vm.syncStats.value.lastSyncTime) / (60 * 1000)
+                    val syncText = if (minutesAgo < 1) {
+                        "هم‌اکنون سینک شده"
+                    } else if (minutesAgo < 60) {
+                        "$minutesAgo دقیقه پیش"
+                    } else {
+                        "${minutesAgo / 60} ساعت پیش"
+                    }
+
+                    Text(
+                        "آخرین سینک: $syncText",
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        fontSize = 10.sp
+                    )
                 }
 
                 Row {
@@ -1019,7 +1081,7 @@ fun MySMSApp() {
                 currentScrollPosition = listState.firstVisibleItemIndex
             }
 
-// لیست مکالمات با قابلیت Pull-to-Refresh
+// لیست مکالمات بدون Pull-to-Refresh
             ConversationListScreen(
                 sortedConversations = sortedConversations,
                 context = context,
@@ -1031,18 +1093,9 @@ fun MySMSApp() {
                     selectedContact = address
                 },
                 scrollToPosition = currentScrollPosition,
-                refreshKey = listRefreshKey,
-                // پارامترهای جدید برای SwipeRefresh
-                isRefreshing = isSyncing,
-                onRefresh = {
-                    if (!isSyncing) {
-                        coroutineScope.launch {
-                            vm.startInitialSync()
-                        }
-                    }
-                }
+                refreshKey = listRefreshKey
+                // پارامترهای SwipeRefresh حذف شدند
             )
-
 // دیالوگ پاسخ سریع
             if (showQuickReplyDialog) {
                 androidx.compose.material3.AlertDialog(

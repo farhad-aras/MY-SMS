@@ -127,4 +127,42 @@
     <string name="toast_message_read">✅ پیام خوانده شد</string>
     <string name="toast_enter_message">لطفاً متن پیام را وارد کنید</string>
     <string name="toast_reply_error">❌ خطا در ارسال پاسخ</string>
+
+    <!-- رفرش دستی -->
+    <string name="menu_refresh_messages"> رفرش پیام‌ها</string>
+    <string name="toast_refreshing_messages">در حال به‌روزرسانی پیام‌ها...</string>
+    <string name="toast_refresh_complete">✅ پیام‌ها به‌روزرسانی شدند</string>
+
+    <!-- سینک هوشمند -->
+    <string name="smart_sync">سینک هوشمند</string>
+    <string name="smart_sync_incremental">سینک افزایشی</string>
+    <string name="smart_sync_full">سینک کامل</string>
+    <string name="smart_sync_status">وضعیت سینک</string>
+    <string name="smart_sync_last">آخرین سینک</string>
+    <string name="smart_sync_just_now">هم‌اکنون</string>
+    <string name="smart_sync_minutes_ago">%d دقیقه پیش</string>
+    <string name="smart_sync_hours_ago">%d ساعت پیش</string>
+    <string name="smart_sync_new_messages">%d پیام جدید</string>
+    <string name="smart_sync_no_new_messages">پیام جدیدی وجود ندارد</string>
+    <string name="smart_sync_in_progress">سینک هوشمند در حال انجام...</string>
+
+    <!-- تنظیمات سینک -->
+    <string name="sync_settings">تنظیمات سینک</string>
+    <string name="sync_incremental_enabled">سینک افزایشی فعال</string>
+    <string name="sync_background_interval">فاصله سینک پس‌زمینه</string>
+    <string name="sync_max_per_batch">حداکثر پیام در هر سینک</string>
+    <string name="sync_only_unread">فقط پیام‌های نخوانده</string>
+    <string name="sync_auto_on_open">سینک خودکار هنگام بازکردن</string>
+
+    <!-- پیام‌های سینک -->
+    <string name="sync_starting">در حال شروع سینک...</string>
+    <string name="sync_completed">سینک کامل شد</string>
+    <string name="sync_failed">سینک ناموفق بود</string>
+    <string name="sync_timeout">سینک زمان‌بر شد</string>
+
+    <!-- واحدهای زمان -->
+    <string name="minutes">دقیقه</string>
+    <string name="hours">ساعت</string>
+    <string name="seconds">ثانیه</string>
+
 </resources>

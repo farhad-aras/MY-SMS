@@ -103,6 +103,58 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs =
         getApplication<Application>().getSharedPreferences("drafts_prefs", Context.MODE_PRIVATE)
 
+    // ==================== Stateهای جدید برای سینک هوشمند ====================
+    private val _lastSyncTime = MutableStateFlow(0L)
+    val lastSyncTime = _lastSyncTime.asStateFlow()
+
+    private val _isSmartSyncing = MutableStateFlow(false)
+    val isSmartSyncing = _isSmartSyncing.asStateFlow()
+
+    private val _smartSyncProgress = MutableStateFlow(0)
+    val smartSyncProgress = _smartSyncProgress.asStateFlow()
+
+    private val _syncStats = MutableStateFlow<SyncStats>(SyncStats())
+    val syncStats = _syncStats.asStateFlow()
+
+    private val syncPrefs = getApplication<Application>()
+        .getSharedPreferences("sync_prefs", Context.MODE_PRIVATE)
+
+    // ==================== کلاس‌های داده برای سینک هوشمند ====================
+
+    /**
+     * آمار سینک
+     */
+    data class SyncStats(
+        val totalMessages: Int = 0,
+        val newMessages: Int = 0,
+        val syncDuration: Long = 0,
+        val lastSyncTime: Long = 0,
+        val syncMethod: String = "full"
+    )
+
+    /**
+     * تنظیمات سینک هوشمند
+     */
+    data class SyncSettings(
+        val incrementalSyncEnabled: Boolean = true,
+        val backgroundSyncInterval: Long = 5 * 60 * 1000, // 5 دقیقه
+        val maxMessagesPerSync: Int = 100,
+        val onlyUnread: Boolean = false,
+        val autoSyncOnAppOpen: Boolean = true
+    )
+
+    /**
+     * نتیجه سینک
+     */
+    sealed class SyncResult {
+        data class Success(val stats: SyncStats) : SyncResult()
+        data class PartialSuccess(val stats: SyncStats, val failedCount: Int) : SyncResult()
+        data class Error(val message: String, val retryable: Boolean) : SyncResult()
+        object NoNewMessages : SyncResult()
+        object Skipped : SyncResult()
+    }
+
+
     init {
         try {
             Log.d("HomeViewModel", "🟢 ViewModel init started")
@@ -126,6 +178,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             // ==================== بارگذاری وضعیت expand/collapse تاریخ‌ها ====================
             // 4. بارگذاری وضعیت expand/collapse تاریخ‌ها
             loadDateExpansionState()
+
+            // 5. بارگذاری وضعیت سینک
+            loadSyncState()
+
+            // 6. شروع سینک هوشمند پس‌زمینه
+            startBackgroundSmartSyncCheck()
 
 
             // 3. مشاهده دیتابیس (همه پیام‌ها و مکالمات)
@@ -167,6 +225,226 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("HomeViewModel", "❌ Error loading date expansion state: ${e.message}", e)
             }
         }
+    }
+
+    /**
+     * بارگذاری وضعیت سینک از SharedPreferences
+     */
+    private fun loadSyncState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val lastSync = syncPrefs.getLong("last_sync_time", 0L)
+                _lastSyncTime.value = lastSync
+
+                Log.d("HomeViewModel", "📊 Sync state loaded: lastSync=${lastSync}")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error loading sync state: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * شروع چک دوره‌ای برای سینک هوشمند
+     */
+    private fun startBackgroundSmartSyncCheck() {
+        viewModelScope.launch {
+            while (isActive) {
+                try {
+                    delay(30 * 1000) // هر 30 ثانیه چک کن
+
+                    // فقط اگر برنامه در foreground است سینک کن
+                    val shouldSync = checkIfShouldSync()
+                    if (shouldSync && !_isSmartSyncing.value) {
+                        Log.d("HomeViewModel", "🔄 Background sync check: starting incremental sync")
+                        syncNewMessagesIncremental()
+                    }
+
+                } catch (e: Exception) {
+                    Log.e("HomeViewModel", "❌ Error in background sync check", e)
+                    delay(60 * 1000) // در صورت خطا 1 دقیقه صبر کن
+                }
+            }
+        }
+    }
+
+    /**
+     * سینک افزایشی پیام‌های جدید
+     */
+    fun syncNewMessagesIncremental() {
+        viewModelScope.launch {
+            try {
+                if (_isSmartSyncing.value) {
+                    Log.d("HomeViewModel", "⏸️ Smart sync already in progress, skipping")
+                    return@launch
+                }
+
+                Log.d("HomeViewModel", "🚀 Starting incremental sync")
+                _isSmartSyncing.value = true
+                _smartSyncProgress.value = 0
+
+                val startTime = System.currentTimeMillis()
+                val lastSync = _lastSyncTime.value
+
+                // 1. سینک پیام‌های جدید
+                val result: Int = withContext(Dispatchers.IO) {
+                    repository.syncNewMessages(lastSync)
+                }
+
+                // 2. آپدیت آمار
+                val syncDuration = System.currentTimeMillis() - startTime
+                val newStats = SyncStats(
+                    totalMessages = smsList.value.size,
+                    newMessages = result,
+                    syncDuration = syncDuration,
+                    lastSyncTime = System.currentTimeMillis(),
+                    syncMethod = "incremental"
+                )
+
+                _syncStats.value = newStats
+                _lastSyncTime.value = System.currentTimeMillis()
+
+                // 3. ذخیره زمان سینک
+                syncPrefs.edit().putLong("last_sync_time", System.currentTimeMillis()).apply()
+
+                // 4. آپدیت progress
+                _smartSyncProgress.value = 100
+                _isSmartSyncing.value = false
+
+                Log.d("HomeViewModel", "✅ Incremental sync completed: $result new messages in ${syncDuration}ms")
+
+                // 5. نمایش Toast اگر پیام جدیدی بود
+                if (result > 0) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            getApplication(),
+                            "✅ $result پیام جدید دریافت شد",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Incremental sync failed: ${e.message}", e)
+                _isSmartSyncing.value = false
+                _smartSyncProgress.value = 0
+            }
+        }
+    }
+
+    // ==================== توابع مدیریت سینک هوشمند ====================
+
+    /**
+     * شروع سینک هوشمند (انتخاب خودکار بین full و incremental)
+     */
+    fun startSmartSync() {
+        viewModelScope.launch {
+            try {
+                val lastSync = _lastSyncTime.value
+                val now = System.currentTimeMillis()
+
+                // اگر بیش از 1 ساعت از آخرین سینک گذشته یا اولین سینک است
+                if (lastSync == 0L || (now - lastSync) > (60 * 60 * 1000)) {
+                    Log.d("HomeViewModel", "⏰ Last sync was too long ago, starting full sync")
+                    startInitialSync()
+                } else {
+                    Log.d("HomeViewModel", "⚡ Last sync was recent, starting incremental sync")
+                    syncNewMessagesIncremental()
+                }
+
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error in smart sync decision", e)
+                // Fallback به سینک کامل
+                startInitialSync()
+            }
+        }
+    }
+
+    /**
+     * دریافت تنظیمات سینک
+     */
+    fun getSyncSettings(): SyncSettings {
+        return SyncSettings(
+            incrementalSyncEnabled = syncPrefs.getBoolean("incremental_sync_enabled", true),
+            backgroundSyncInterval = syncPrefs.getLong("background_sync_interval", 5 * 60 * 1000),
+            maxMessagesPerSync = syncPrefs.getInt("max_messages_per_sync", 100),
+            onlyUnread = syncPrefs.getBoolean("only_unread", false),
+            autoSyncOnAppOpen = syncPrefs.getBoolean("auto_sync_on_app_open", true)
+        )
+    }
+
+    /**
+     * ذخیره تنظیمات سینک
+     */
+    fun saveSyncSettings(settings: SyncSettings) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                syncPrefs.edit().apply {
+                    putBoolean("incremental_sync_enabled", settings.incrementalSyncEnabled)
+                    putLong("background_sync_interval", settings.backgroundSyncInterval)
+                    putInt("max_messages_per_sync", settings.maxMessagesPerSync)
+                    putBoolean("only_unread", settings.onlyUnread)
+                    putBoolean("auto_sync_on_app_open", settings.autoSyncOnAppOpen)
+                    apply()
+                }
+                Log.d("HomeViewModel", "✅ Sync settings saved")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error saving sync settings", e)
+            }
+        }
+    }
+
+    /**
+     * پاک کردن cache سینک (برای debug)
+     */
+    fun clearSyncCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                syncPrefs.edit().clear().apply()
+                _lastSyncTime.value = 0L
+                _syncStats.value = SyncStats()
+                Log.d("HomeViewModel", "🧹 Sync cache cleared")
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "❌ Error clearing sync cache", e)
+            }
+        }
+    }
+
+    /**
+     * بررسی وضعیت سینک
+     */
+    fun getSyncStatus(): String {
+        val lastSync = _lastSyncTime.value
+        val now = System.currentTimeMillis()
+
+        return if (lastSync == 0L) {
+            "⏳ اولین سینک انجام نشده"
+        } else {
+            val minutesAgo = (now - lastSync) / (60 * 1000)
+            if (minutesAgo < 1) {
+                "✅ هم‌اکنون سینک شده"
+            } else if (minutesAgo < 60) {
+                "✅ $minutesAgo دقیقه پیش"
+            } else {
+                "⚠️ ${minutesAgo / 60} ساعت پیش"
+            }
+        }
+    }
+
+    /**
+     * بررسی آیا باید سینک انجام شود
+     */
+    private fun checkIfShouldSync(): Boolean {
+        // تنظیمات سینک هوشمند را از SharedPreferences بگیر
+        val incrementalEnabled = syncPrefs.getBoolean("incremental_sync_enabled", true)
+        val lastSyncTime = _lastSyncTime.value
+        val now = System.currentTimeMillis()
+
+        // اگر سینک افزایشی فعال نیست یا کمتر از 1 دقیقه از آخرین سینک گذشته
+        if (!incrementalEnabled || (now - lastSyncTime < 60 * 1000)) {
+            return false
+        }
+
+        return true
     }
 
     /**
@@ -453,6 +731,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 Log.d("HomeViewModel", "🔄 Starting initial sync")
+                val startTime = System.currentTimeMillis()
                 _isSyncing.value = true
                 _loadingProgress.value = 0
 
@@ -474,6 +753,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
                             // 4. شروع چک دوره‌ای پیام‌های چندبخشی
                             startMultipartCombinationCheck()
+
+                            // 5. آپدیت زمان آخرین سینک
+                            _lastSyncTime.value = System.currentTimeMillis()
+                            syncPrefs.edit().putLong("last_sync_time", System.currentTimeMillis()).apply()
+
+                            // 6. آپدیت آمار (با delay کمی تا مطمئن شویم stateها آپدیت شده‌اند)
+                            viewModelScope.launch {
+                                delay(500) // کمی صبر کن
+                                val syncDuration = System.currentTimeMillis() - startTime
+                                _syncStats.value = SyncStats(
+                                    totalMessages = smsList.value.size,
+                                    newMessages = smsList.value.size,
+                                    syncDuration = syncDuration,
+                                    lastSyncTime = System.currentTimeMillis(),
+                                    syncMethod = "full"
+                                )
+
+                                _lastSyncTime.value = System.currentTimeMillis()
+                                syncPrefs.edit().putLong("last_sync_time", System.currentTimeMillis()).apply()
+
+                                Log.d("HomeViewModel", "💾 Full sync completed in ${syncDuration}ms")
+                            }
+
                         }
                     }
                 }

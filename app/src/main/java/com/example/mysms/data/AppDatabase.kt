@@ -5,8 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import android.util.Log
 
-@Database(entities = [SmsEntity::class], version = 2, exportSchema = false)
+@Database(entities = [SmsEntity::class], version = 4, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun smsDao(): SmsDao
@@ -22,8 +25,9 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "sms_database"
                 )
-                    .fallbackToDestructiveMigration() // این خط رو اضافه کن
+                    .fallbackToDestructiveMigration() // فقط این خط
                     .build()
+
                 INSTANCE = instance
                 instance
             }

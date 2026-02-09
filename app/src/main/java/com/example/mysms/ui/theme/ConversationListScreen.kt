@@ -22,14 +22,9 @@ fun ConversationListScreen(
     listState: LazyListState,
     onContactClick: (String) -> Unit,
     scrollToPosition: Int = 0,
-    refreshKey: Int = 0,
-    // پارامترهای جدید برای SwipeRefresh
-    isRefreshing: Boolean = false,
-    onRefresh: () -> Unit = {}
+    refreshKey: Int = 0
+    // پارامترهای SwipeRefresh حذف شدند
 ) {
-
-    // حالت SwipeRefresh
-    val swipeRefreshState = rememberSwipeRefreshState(isRefreshing = isRefreshing)
 
     LaunchedEffect(refreshKey) {
         if (refreshKey > 0) {
@@ -47,22 +42,10 @@ fun ConversationListScreen(
         }
     }
 
-    SwipeRefresh(
-        state = swipeRefreshState,
-        onRefresh = onRefresh,
-        indicator = { state, refreshTrigger ->
-            SwipeRefreshIndicator(
-                state = state,
-                refreshTriggerDistance = refreshTrigger,
-                backgroundColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
-            )
-        }
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize()
     ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize()
-        ) {
             items(
                 items = sortedConversations,
                 key = { it.sms.address }
@@ -85,4 +68,3 @@ fun ConversationListScreen(
             }
         }
     }
-}

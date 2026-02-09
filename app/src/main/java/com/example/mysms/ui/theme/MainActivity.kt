@@ -1,6 +1,6 @@
     package com.example.mysms.ui.theme
 
-
+    import android.app.NotificationManager as AndroidNotificationManager
     import MySMSApp
     import android.provider.Telephony
     import android.content.Intent
@@ -32,9 +32,15 @@
     
             // ۲. مخفی کردن نوتیفیکیشن‌های پیش‌فرض
             DefaultSmsDisabler.hideDefaultNotifications(this)
-    
-            // بررسی Intent برای بازشدن از نوتیفیکیشن
+
+// بررسی Intent برای بازشدن از نوتیفیکیشن و حذف نوتیفیکیشن
             handleNotificationIntent(intent)
+
+// حذف نوتیفیکیشن اگر از طریق کلیک باز شده باشد
+            if (intent?.hasExtra("notification_clicked") == true ||
+                intent?.hasExtra("notification_id") == true) {
+                cancelNotificationFromIntent(intent)
+            }
 
 // بررسی Intent برای پاسخ سریع از NotificationActionReceiver
             val showQuickReplyDialog = intent.getBooleanExtra("show_quick_reply_dialog", false)
@@ -77,13 +83,19 @@
                 }
             }
         }
-    
+
         override fun onNewIntent(intent: Intent) {
             super.onNewIntent(intent)
             Log.d("MainActivity", "🔄 New Intent received")
-    
+
             // بررسی Intent جدید (مثلاً کلیک روی نوتیفیکیشن)
             handleNotificationIntent(intent)
+
+            // حذف نوتیفیکیشن اگر از طریق کلیک باز شده باشد
+            if (intent.hasExtra("notification_clicked") ||
+                intent.hasExtra("notification_id")) {
+                cancelNotificationFromIntent(intent)
+            }
         }
     
         private fun handleNotificationIntent(intent: Intent?) {
@@ -114,8 +126,47 @@
                     "در حال بازکردن چت با $contactAddress",
                     Toast.LENGTH_SHORT
                 ).show()
+// حذف نوتیفیکیشن این مخاطب
+                val notificationId = intent.getIntExtra("notification_id", 0)
+                if (notificationId != 0) {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as AndroidNotificationManager
+                    notificationManager.cancel(notificationId)
+                    Log.d("MainActivity", "🗑️ نوتیفیکیشن $notificationId حذف شد (از handleNotificationIntent)")
+                }
             }
         }
+
+        /**
+         * حذف نوتیفیکیشن بر اساس notification_id از Intent
+         */
+        private fun cancelNotificationFromIntent(intent: Intent) {
+            try {
+                val notificationId = intent.getIntExtra("notification_id", 0)
+                if (notificationId != 0) {
+                    // حذف نوتیفیکیشن با استفاده از NotificationManager
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as AndroidNotificationManager
+                    notificationManager.cancel(notificationId)
+
+                    Log.d("MainActivity", "🗑️ نوتیفیکیشن $notificationId حذف شد (از Intent)")
+
+                    // همچنین notification با hashCode آدرس را هم حذف کن
+                    val address = intent.getStringExtra("contact_address")
+                    if (!address.isNullOrEmpty()) {
+                        val alternativeNotificationId = address.hashCode() and 0x7FFFFFFF
+                        if (alternativeNotificationId != notificationId) {
+                            notificationManager.cancel(alternativeNotificationId)
+                            Log.d("MainActivity", "🗑️ نوتیفیکیشن جایگزین $alternativeNotificationId حذف شد")
+                        }
+                    }
+                } else {
+                    Log.w("MainActivity", "⚠️ notification_id = 0, حذف انجام نشد")
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "❌ خطا در حذف نوتیفیکیشن از Intent", e)
+            }
+        }
+
+
 
         fun startForegroundServiceIfNeeded() {
             try {
