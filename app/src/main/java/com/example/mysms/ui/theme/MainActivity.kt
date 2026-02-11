@@ -2,6 +2,7 @@
 
     import android.app.NotificationManager as AndroidNotificationManager
     import MySMSApp
+    import android.app.NotificationManager
     import android.provider.Telephony
     import android.content.Intent
     import android.content.Context
@@ -97,20 +98,35 @@
                 cancelNotificationFromIntent(intent)
             }
         }
-    
+
         private fun handleNotificationIntent(intent: Intent?) {
             if (intent == null) return
-    
+
             Log.d("MainActivity", "🔍 Checking intent extras: ${intent.extras?.keySet()}")
-    
+
+            // ============ دریافت notificationId برای حذف نوتیفیکیشن ============
+            val notificationId = intent.getIntExtra("notification_id", -1)
+            val contactAddress = intent.getStringExtra("contact_address")
+
+            // اگر notificationId وجود داشت، نوتیفیکیشن رو حذف کن
+            if (notificationId != -1) {
+                try {
+                    // ✅ اصلاح: استفاده از android.app.NotificationManager
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    notificationManager.cancel(notificationId)
+                    Log.d("MainActivity", "🗑️ نوتیفیکیشن $notificationId حذف شد")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "❌ خطا در حذف نوتیفیکیشن: ${e.message}")
+                }
+            }
+
             // بررسی آیا از نوتیفیکیشن باز شده است؟
             val openChat = intent.getBooleanExtra("open_chat", false)
-            val contactAddress = intent.getStringExtra("contact_address")
             val notificationClicked = intent.getBooleanExtra("notification_clicked", false)
-    
+
             if ((openChat || notificationClicked) && !contactAddress.isNullOrEmpty()) {
                 Log.d("MainActivity", "🎯 Opening chat from notification for: $contactAddress")
-    
+
                 // ذخیره اطلاعات برای استفاده در Composable
                 val prefs = getSharedPreferences("notification_prefs", Context.MODE_PRIVATE)
                 prefs.edit().apply {
@@ -119,7 +135,7 @@
                     putString("chat_name", intent.getStringExtra("contact_name"))
                     apply()
                 }
-    
+
                 // نمایش Toast
                 Toast.makeText(
                     this,

@@ -26,6 +26,7 @@ import java.util.*
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.runBlocking
 
+
 class SmsReceiver : BroadcastReceiver() {
 
     companion object {
@@ -231,9 +232,9 @@ class SmsReceiver : BroadcastReceiver() {
                             val address = firstSms.address
                             val body = firstSms.body
 
-                            Log.d("SmsReceiver", "📨 نمایش نوتیفیکیشن برای پیام تک‌بخشی (legacy): $address")
+                            Log.d("SmsReceiver", "📨 نمایش نوتیفیکیشن برای پیام تک‌بخشی: $address")
 
-                            // شروع سرویس برای نمایش نوتیفیکیشن
+                            // ✅ شروع سرویس برای نمایش نوتیفیکیشن
                             val serviceIntent = Intent(context, ForegroundSmsService::class.java)
                             serviceIntent.putExtra("show_notification", true)
                             serviceIntent.putExtra("address", address)
@@ -247,7 +248,7 @@ class SmsReceiver : BroadcastReceiver() {
                             }
 
                         } catch (e: Exception) {
-                            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام تک (legacy)", e)
+                            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام تک", e)
                         }
                     }
                 }
@@ -460,6 +461,9 @@ class SmsReceiver : BroadcastReceiver() {
     /**
      * پردازش هوشمند پیام‌های چندبخشی
      */
+    /**
+     * پردازش هوشمند پیام‌های چندبخشی
+     */
     private fun processMultipartMessages(context: Context, smsList: List<SmsEntity>) {
         if (smsList.isEmpty()) return
 
@@ -476,10 +480,12 @@ class SmsReceiver : BroadcastReceiver() {
                         // اگر پیام کامل شد، نوتیفیکیشن نمایش بده
                         if (processedSms.isComplete && processedSms.isMultipart) {
                             Log.d("SmsReceiver", "🎉 پیام چندبخشی کامل شد، نمایش نوتیفیکیشن")
-                            showNotificationForCompleteMessage(context, processedSms)
+                            // ✅ استفاده از showNewMessageNotification به جای تابع حذف شده
+                            showNewMessageNotification(context, processedSms)
                         } else if (!sms.isMultipart) {
                             // برای پیام‌های تک‌بخشی هم نوتیفیکیشن نمایش بده
-                            showNotificationForSingleMessage(context, sms)
+                            // ✅ استفاده از showNewMessageNotification به جای تابع حذف شده
+                            showNewMessageNotification(context, sms)
                         }
                     } catch (e: Exception) {
                         Log.e("SmsReceiver", "❌ خطا در پردازش پیام: ${sms.address}", e)
@@ -495,49 +501,8 @@ class SmsReceiver : BroadcastReceiver() {
     /**
      * نمایش نوتیفیکیشن برای پیام کامل شده
      */
-    private fun showNotificationForCompleteMessage(context: Context, sms: SmsEntity) {
-        try {
-            // استفاده از ForegroundService برای نمایش نوتیفیکیشن
-            val serviceIntent = Intent(context, ForegroundSmsService::class.java)
-            serviceIntent.putExtra("show_notification", true)
-            serviceIntent.putExtra("address", sms.address)
-            serviceIntent.putExtra("body", sms.body)
-            serviceIntent.putExtra("is_complete_multipart", true)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
 
-            Log.d("SmsReceiver", "📢 نوتیفیکیشن برای پیام کامل ارسال شد: ${sms.address}")
-
-        } catch (e: Exception) {
-            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام کامل", e)
-        }
-    }
-
-    /**
-     * نمایش نوتیفیکیشن برای پیام تک‌بخشی
-     */
-    private fun showNotificationForSingleMessage(context: Context, sms: SmsEntity) {
-        try {
-            val serviceIntent = Intent(context, ForegroundSmsService::class.java)
-            serviceIntent.putExtra("show_notification", true)
-            serviceIntent.putExtra("address", sms.address)
-            serviceIntent.putExtra("body", sms.body)
-            serviceIntent.putExtra("is_complete_multipart", false)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
-
-        } catch (e: Exception) {
-            Log.e("SmsReceiver", "❌ خطا در نمایش نوتیفیکیشن پیام تک", e)
-        }
-    }
 
     private suspend fun saveToDatabase(context: Context, smsList: List<SmsEntity>) {
         try {
@@ -575,41 +540,13 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    // ==================== تابع بهبودیافته نوتیفیکیشن ====================
-  /*  private fun showNotificationAlways(context: Context, sms: SmsEntity) {
-        try {
-            // ============ تغییر مهم: استفاده از Foreground Service ============
-            // اگر سرویس foreground در حال اجرا باشد، از آن استفاده کن
-            // در غیر این صورت از روش قدیمی
 
-            // 1. سعی کن از Foreground Service استفاده کنی
-            try {
-                // راه‌اندازی سرویس foreground اگر در حال اجرا نیست
-                ForegroundSmsService.startService(context)
-
-                // منتظر باش سرویس شروع شود
-                Thread.sleep(500)
-
-                // نمایش نوتیفیکیشن از طریق سرویس
-                // Note: در اینجا نیاز به ارسال broadcast به سرویس داریم
-                // اما برای سادگی، هم از سرویس و هم از روش مستقیم استفاده می‌کنیم
-
-            } catch (e: Exception) {
-                Log.w("SmsReceiver", "⚠️ Could not use foreground service: ${e.message}")
-            }
-
-            // 2. همیشه نوتیفیکیشن را مستقیماً هم نمایش بده (برای اطمینان)
-            showNewMessageNotification(context, sms)
-
-            Log.d("SmsReceiver", "📢 Notification shown for ${sms.address}")
-
-        } catch (e: Exception) {
-            Log.e("SmsReceiver", "❌ Error showing notification: ${e.message}", e)
-        }
-    }*/
 
     private fun showNewMessageNotification(context: Context, sms: SmsEntity) {
         try {
+            // ============ استفاده از notificationId یکسان با ForegroundSmsService ============
+            val notificationId = sms.address.hashCode() and 0x7FFFFFFF
+
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE)
                     as NotificationManager
 
@@ -634,16 +571,12 @@ class SmsReceiver : BroadcastReceiver() {
             // 2. ایجاد Intent برای بازکردن مستقیم چت
             val openChatIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-
-                // اضافه کردن اکسترا برای بازکردن چت با مخاطب خاص
                 putExtra("open_chat", true)
                 putExtra("contact_address", sms.address)
                 putExtra("contact_name", getContactName(context, sms.address))
                 putExtra("notification_clicked", true)
                 putExtra("message_id", sms.id)
-
-                // اضافه کردن action برای تمایز
-                action = "OPEN_CHAT_ACTION_${sms.address.hashCode()}"
+                putExtra("notification_id", notificationId) // اضافه کردن notificationId
             }
 
             // 3. ایجاد PendingIntent
@@ -655,7 +588,7 @@ class SmsReceiver : BroadcastReceiver() {
 
             val pendingIntent = PendingIntent.getActivity(
                 context,
-                sms.address.hashCode(), // استفاده از hashCode برای ID منحصربه‌فرد
+                notificationId, // استفاده از notificationId یکسان
                 openChatIntent,
                 pendingIntentFlags
             )
@@ -683,14 +616,12 @@ class SmsReceiver : BroadcastReceiver() {
                 .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setGroup("sms_messages") // گروه‌بندی برای چندین پیام
+                .setGroup("sms_messages")
                 .setGroupSummary(false)
                 .build()
 
-            // 7. نمایش نوتیفیکیشن با ID منحصربه‌فرد
-            val notificationId = NOTIFICATION_ID_BASE + (sms.address.hashCode().absoluteValue % 1000)
+            // 7. نمایش نوتیفیکیشن با ID یکسان
             notificationManager.notify(notificationId, notification)
-
             Log.d("SmsReceiver", "📢 Notification shown for $displayName (ID: $notificationId)")
 
         } catch (e: Exception) {

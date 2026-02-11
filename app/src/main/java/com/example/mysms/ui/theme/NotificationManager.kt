@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+
 /**
  * مدیریت مرکزی تمام اکشن‌های نوتیفیکیشن
  */
@@ -195,19 +196,6 @@ object NotificationManager {
     }
 
     /**
-     * حذف نوتیفیکیشن
-     */
-    private fun cancelNotification(context: Context, notificationId: Int) {
-        try {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(notificationId)
-            Log.d(TAG, "🗑️ نوتیفیکیشن $notificationId حذف شد")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ خطا در حذف نوتیفیکیشن", e)
-        }
-    }
-
-    /**
      * اضافه کردن دکمه "خوانده شده" به نوتیفیکیشن کد تأیید
      */
     fun createMarkAsReadPendingIntent(
@@ -247,6 +235,36 @@ object NotificationManager {
             )
         }
     }
+
+
+    /**
+     * حذف نوتیفیکیشن با آدرس مخاطب
+     * این تابع عمومی است و از بیرون قابل فراخوانی
+     */
+    fun cancelNotificationByAddress(context: Context, address: String) {
+        try {
+            val notificationId = address.hashCode() and 0x7FFFFFFF
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            notificationManager.cancel(notificationId)
+            Log.d(TAG, "🗑️ نوتیفیکیشن با آدرس $address حذف شد (ID: $notificationId)")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ خطا در حذف نوتیفیکیشن با آدرس", e)
+        }
+    }
+
+    /**
+     * حذف نوتیفیکیشن با شناسه مستقیم
+     */
+    fun cancelNotification(context: Context, notificationId: Int) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            notificationManager.cancel(notificationId)
+            Log.d(TAG, "🗑️ نوتیفیکیشن $notificationId حذف شد")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ خطا در حذف نوتیفیکیشن", e)
+        }
+    }
+
 
     /**
      * دریافت متن پاسخ از RemoteInput
