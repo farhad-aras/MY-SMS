@@ -8,7 +8,6 @@ import android.util.Log
 import android.widget.Toast
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import com.example.mysms.ui.theme.SimpleMessageBubble
 import com.example.mysms.ui.theme.LinkSecurityManager
 import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
@@ -79,12 +78,12 @@ import com.example.mysms.ui.theme.MainActivity
 import com.example.mysms.ui.theme.OnboardingScreen
 import com.example.mysms.ui.theme.SettingsScreen
 import com.example.mysms.ui.theme.checkAllRequiredPermissions
-import com.example.mysms.ui.theme.shouldShowOnboarding
 import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.text.isNullOrBlank
 import androidx.compose.material.icons.filled.Refresh
+import com.example.mysms.data.SmsEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,6 +120,22 @@ fun MySMSApp() {
         factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
     )
 
+    // ==================== دسترسی به Managers ====================
+    val syncManager = vm.syncManager
+    val uiPrefsManager = vm.uiPrefsManager
+    val onboardingManager = vm.onboardingManager
+    val multipartManager = vm.multipartManager
+
+    // ==================== Stateهای SyncManager ====================
+    val isSmartSyncing by syncManager.isSmartSyncing.collectAsState()
+    val smartSyncProgress by syncManager.smartSyncProgress.collectAsState()
+    val syncStats by syncManager.syncStats.collectAsState()
+    val lastSyncTime by syncManager.lastSyncTime.collectAsState()
+
+    // ==================== Stateهای OnboardingManager ====================
+    val onboardingCompleted by onboardingManager.onboardingCompleted.collectAsState()
+
+
     // مدیریت اولیه
     val appPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
     var isFirstLoadDone by remember { mutableStateOf(appPrefs.getBoolean("initial_load_done", false)) }
@@ -136,9 +151,9 @@ fun MySMSApp() {
     val sim1Id by vm.sim1Id.collectAsState()
     val sim2Id by vm.sim2Id.collectAsState()
 
-    // نام‌های سفارشی تب‌ها
-    val sim1TabName by vm.sim1TabName.collectAsState()
-    val sim2TabName by vm.sim2TabName.collectAsState()
+    // نام‌های سفارشی تب‌ها - از UIPreferencesManager
+    val sim1TabName by uiPrefsManager.sim1TabName.collectAsState()
+    val sim2TabName by uiPrefsManager.sim2TabName.collectAsState()
 
     // پیام‌های موقت و وضعیت ارسال
     val tempMessages by vm.tempMessages.collectAsState()
@@ -181,7 +196,11 @@ fun MySMSApp() {
 
     // ==================== حالت نمایش Onboarding ====================
     var shouldShowOnboarding by remember {
-        mutableStateOf(shouldShowOnboarding(context))
+        mutableStateOf(!onboardingManager.onboardingCompleted.value)
+    }
+
+    LaunchedEffect(onboardingManager.onboardingCompleted.value) {
+        shouldShowOnboarding = !onboardingManager.onboardingCompleted.value
     }
 
     // ==================== مدیریت بازکردن از نوتیفیکیشن ====================
@@ -434,15 +453,14 @@ fun MySMSApp() {
     }
 
     // محاسبه مکالمات - منطق از کد قدیمی
-    val sortedConversations by remember(smsList, pinnedList.size, vm.drafts, selectedTab, showUnreadFirst, listRefreshKey) {
-        derivedStateOf {
+    val sortedConversations by remember(smsList, pinnedList.size, uiPrefsManager.drafts, selectedTab, showUnreadFirst, listRefreshKey) {        derivedStateOf {
             val allConversations = smsList.groupBy { it.address }.map { entry ->
                 val address = entry.key
                 val messages = entry.value
                 val lastMsg = messages.maxByOrNull { it.date }!!
 
                 val unreadCount = messages.count { !it.read && it.type == 1 }
-                val draft = vm.drafts[address]
+                val draft = uiPrefsManager.drafts[address]
                 val showDraft = !draft.isNullOrBlank()
                 val isPinned = pinnedList.contains(address)
 
@@ -633,10 +651,9 @@ fun MySMSApp() {
             vm.markConversationAsRead(contactAddress)
         }
         // دریافت پیام‌های این مخاطب
-        val contactMessages by remember(contactAddress, smsList, tempMessages) {
-            derivedStateOf {
-                vm.getCombinedMessages(contactAddress)
-            }
+        var contactMessages by remember(contactAddress) { mutableStateOf(emptyList<SmsEntity>()) }
+        LaunchedEffect(contactAddress, smsList, tempMessages) {
+            contactMessages = vm.getCombinedMessages(contactAddress)
         }
 
         // وضعیت ارسال
@@ -647,8 +664,8 @@ fun MySMSApp() {
         }
 
         // پیش‌نویس فعلی
-        val currentDraft by remember(vm.drafts[contactAddress]) {
-            mutableStateOf(vm.drafts[contactAddress] ?: "")
+        val currentDraft by remember(contactAddress) {
+            mutableStateOf(uiPrefsManager.drafts[contactAddress] ?: "")
         }
 
 
@@ -670,10 +687,11 @@ fun MySMSApp() {
                 },
                 draftMessage = currentDraft,
                 onDraftChange = { newText ->
-                    vm.updateDraft(contactAddress, newText)
+                    uiPrefsManager.updateDraft(contactAddress, newText)
                 },
                 address = contactAddress,
-                onBack = { selectedContact = null }
+                onBack = { selectedContact = null },
+                viewModel = vm
 
             )
         }
@@ -859,19 +877,25 @@ fun MySMSApp() {
                                 showWhitelistManagerDialog()
                             }
                         )
-// آیتم رفرش هوشمند
+// آیتم رفرش هوشمند - از SyncManager
                         Divider()
                         DropdownMenuItem(
                             text = { Text("🔄 سینک هوشمند") },
                             onClick = {
                                 showMenu = false
-                                if (!isSyncing && !vm.isSmartSyncing.value) {
+                                if (!isSyncing && !isSmartSyncing) {
                                     coroutineScope.launch {
                                         Toast.makeText(context, "در حال سینک هوشمند...", Toast.LENGTH_SHORT).show()
-                                        vm.startSmartSync()
+                                        syncManager.startSmartSync(
+                                            onFullSync = { vm.startInitialSync() },
+                                            onIncrementalSync = {
+                                                coroutineScope.launch {
+                                                    val lastSync = syncManager.lastSyncTime.value
+                                                    syncManager.syncNewMessagesIncremental(lastSync)
+                                                }
+                                            }
+                                        )
                                         listRefreshKey++
-                                        delay(500)
-                                        // Toast پیام جدید در خود ViewModel نمایش داده می‌شود
                                     }
                                 } else {
                                     Toast.makeText(context, "در حال سینک... لطفاً صبر کنید", Toast.LENGTH_SHORT).show()
@@ -974,10 +998,10 @@ fun MySMSApp() {
                 )
             }
 
-            // Progress Indicator برای سینک هوشمند
-            if (vm.isSmartSyncing.value) {
+            // Progress Indicator برای سینک هوشمند - از SyncManager
+            if (isSmartSyncing) {
                 LinearProgressIndicator(
-                    progress = vm.smartSyncProgress.value / 100f,
+                    progress = smartSyncProgress / 100f,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp),
@@ -1016,15 +1040,13 @@ fun MySMSApp() {
                     }
                 }
 
-                // نمایش وضعیت سینک هوشمند
-                if (vm.syncStats.value.lastSyncTime > 0) {
-                    val minutesAgo = (System.currentTimeMillis() - vm.syncStats.value.lastSyncTime) / (60 * 1000)
-                    val syncText = if (minutesAgo < 1) {
-                        "هم‌اکنون سینک شده"
-                    } else if (minutesAgo < 60) {
-                        "$minutesAgo دقیقه پیش"
-                    } else {
-                        "${minutesAgo / 60} ساعت پیش"
+                // نمایش وضعیت سینک هوشمند - از SyncManager
+                if (syncStats.lastSyncTime > 0) {
+                    val minutesAgo = (System.currentTimeMillis() - syncStats.lastSyncTime) / (60 * 1000)
+                    val syncText = when {
+                        minutesAgo < 1 -> "هم‌اکنون سینک شده"
+                        minutesAgo < 60 -> "$minutesAgo دقیقه پیش"
+                        else -> "${minutesAgo / 60} ساعت پیش"
                     }
 
                     Text(

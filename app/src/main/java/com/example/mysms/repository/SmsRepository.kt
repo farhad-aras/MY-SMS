@@ -25,7 +25,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.telephony.SubscriptionManager
 import androidx.core.app.ActivityCompat
-import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.withContext
 
 class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
@@ -591,136 +590,6 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
     }
 
 
-    /**
-     * سینک هوشمند با مدیریت وضعیت
-     */
-    suspend fun smartSync(lastSyncTime: Long): SmartSyncResult = withContext(Dispatchers.IO) {
-        try {
-            Log.d("SmsRepository", "🤖 Starting smart sync since $lastSyncTime")
-
-            // 1. دریافت پیام‌های جدید از سیستم
-            val newMessages = mutableListOf<SmsEntity>()
-            val cursor = context.contentResolver.query(
-                android.provider.Telephony.Sms.CONTENT_URI,
-                null,
-                "${android.provider.Telephony.Sms.DATE} > $lastSyncTime",
-                null,
-                "${android.provider.Telephony.Sms.DATE} ASC" // قدیمی‌ترین اول
-            )
-
-            var totalMessages = 0
-            cursor?.use {
-                totalMessages = smsDao.getAllSms().size
-
-                val idIdx = it.getColumnIndex(android.provider.Telephony.Sms._ID)
-                val addrIdx = it.getColumnIndex(android.provider.Telephony.Sms.ADDRESS)
-                val bodyIdx = it.getColumnIndex(android.provider.Telephony.Sms.BODY)
-                val dateIdx = it.getColumnIndex(android.provider.Telephony.Sms.DATE)
-                val typeIdx = it.getColumnIndex(android.provider.Telephony.Sms.TYPE)
-                val subIdIdx = it.getColumnIndex("sub_id")
-                val readIdx = it.getColumnIndex(android.provider.Telephony.Sms.READ)
-
-                while (it.moveToNext()) {
-                    try {
-                        val id = if (idIdx != -1) it.getString(idIdx) else "new_${System.currentTimeMillis()}"
-                        val address = if (addrIdx != -1) it.getString(addrIdx) ?: "Unknown" else "Unknown"
-                        val body = if (bodyIdx != -1) it.getString(bodyIdx) ?: "" else ""
-                        val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
-                        val type = if (typeIdx != -1) it.getInt(typeIdx) else 1
-                        val subId = if (subIdIdx != -1) it.getInt(subIdIdx) else -1
-                        val isRead = if (readIdx != -1) it.getInt(readIdx) == 1 else true
-
-                        newMessages.add(
-                            SmsEntity(
-                                id = id,
-                                address = address,
-                                body = body,
-                                date = date,
-                                type = type,
-                                subId = subId,
-                                read = isRead,
-                                threadId = calculateThreadId(address),
-                                messageId = date / 1000,
-                                partCount = 1,
-                                partIndex = 1,
-                                referenceNumber = 0,
-                                isMultipart = false,
-                                isComplete = true,
-                                status = -1,
-                                isSynced = false, // نیاز به سینک
-                                syncVersion = 0,
-                                serverId = null,
-                                lastModified = date,
-                                isDeleted = false
-                            )
-                        )
-
-                    } catch (e: Exception) {
-                        Log.e("SmsRepository", "Error reading SMS in smart sync", e)
-                    }
-                }
-            }
-
-            cursor?.close()
-
-            if (newMessages.isEmpty()) {
-                Log.d("SmsRepository", "📭 No new messages found for smart sync")
-                return@withContext SmartSyncResult.NoNewMessages
-            }
-
-            // 2. ذخیره در دیتابیس
-            smsDao.insertAll(newMessages)
-
-            // 3. علامت‌گذاری به عنوان سینک شده
-            val ids = newMessages.map { it.id }
-            smsDao.markAsSynced(ids, 1)
-
-            Log.d("SmsRepository", "✅ Smart sync completed: ${newMessages.size} messages")
-            return@withContext SmartSyncResult.Success(
-                SyncStats(
-                    totalMessages = totalMessages + newMessages.size,
-                    newMessages = newMessages.size,
-                    syncDuration = 0, // محاسبه در ViewModel
-                    lastSyncTime = System.currentTimeMillis(),
-                    syncMethod = "smart"
-                )
-            )
-
-        } catch (e: Exception) {
-            Log.e("SmsRepository", "❌ Smart sync failed: ${e.message}", e)
-            return@withContext SmartSyncResult.Error("Smart sync failed: ${e.message}", true)
-        }
-    }
-
-// ==================== کلاس‌های نتیجه سینک (مستقل از HomeViewModel) ====================
-
-    /**
-     * آمار سینک
-     */
-    data class SyncStats(
-        val totalMessages: Int = 0,
-        val newMessages: Int = 0,
-        val syncDuration: Long = 0,
-        val lastSyncTime: Long = 0,
-        val syncMethod: String = "full"
-    )
-
-    /**
-     * نتیجه سینک
-     */
-    sealed class SmartSyncResult {
-        data class Success(val stats: SyncStats) : SmartSyncResult()
-        data class Error(val message: String, val retryable: Boolean) : SmartSyncResult()
-        object NoNewMessages : SmartSyncResult()
-    }
-
-    // کلاس نتیجه سینک
-    sealed class SyncResult {
-        data class Success(val stats: HomeViewModel.SyncStats) : SyncResult()
-        data class Error(val message: String, val retryable: Boolean) : SyncResult()
-        object NoNewMessages : SyncResult()
-    }
-
 
     suspend fun getAllSmsFromDb(): List<SmsEntity> {
         return smsDao.getAllSms()
@@ -852,6 +721,19 @@ class SmsRepository(private val context: Context, private val smsDao: SmsDao) {
                 Log.e("QuickImport", "💥 Quick import error", e)
                 0
             }
+        }
+    }
+
+    // ==================== تابع جدید برای SyncManager ====================
+    /**
+     * دریافت آخرین زمان سینک از دیتابیس
+     */
+    suspend fun getLastSyncTime(): Long? {
+        return try {
+            smsDao.getLastSyncTime()
+        } catch (e: Exception) {
+            Log.e("SmsRepository", "❌ Error getting last sync time", e)
+            null
         }
     }
 

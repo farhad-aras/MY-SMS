@@ -33,6 +33,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
+    // دریافت UIPreferencesManager از ViewModel
+    val uiPrefsManager = viewModel.uiPrefsManager
+
     // State برای نام‌های جدید
     var newSim1Name by remember { mutableStateOf("") }
     var newSim2Name by remember { mutableStateOf("") }
@@ -40,10 +43,10 @@ fun SettingsScreen(
     // State برای نمایش پیام موفقیت
     var showSuccessMessage by remember { mutableStateOf(false) }
 
-    // بارگذاری نام‌های فعلی
+    // بارگذاری نام‌های فعلی از UIPreferencesManager
     LaunchedEffect(Unit) {
-        newSim1Name = viewModel.getCurrentTabName(0)
-        newSim2Name = viewModel.getCurrentTabName(1)
+        newSim1Name = uiPrefsManager.getCurrentTabName(0)
+        newSim2Name = uiPrefsManager.getCurrentTabName(1)
         Log.d("SettingsScreen", "📝 Loaded current names: SIM1='$newSim1Name', SIM2='$newSim2Name'")
     }
 
@@ -170,8 +173,8 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // نمایش نام فعلی
-                    val currentSim1Name by viewModel.sim1TabName.collectAsState()
+                    // نمایش نام فعلی از UIPreferencesManager
+                    val currentSim1Name by uiPrefsManager.sim1TabName.collectAsState()
                     Text(
                         "نام فعلی: $currentSim1Name",
                         style = MaterialTheme.typography.bodyMedium,
@@ -229,8 +232,8 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // نمایش نام فعلی
-                    val currentSim2Name by viewModel.sim2TabName.collectAsState()
+                    // نمایش نام فعلی از UIPreferencesManager
+                    val currentSim2Name by uiPrefsManager.sim2TabName.collectAsState()
                     Text(
                         "نام فعلی: $currentSim2Name",
                         style = MaterialTheme.typography.bodyMedium,
@@ -286,9 +289,9 @@ fun SettingsScreen(
                 // دکمه ذخیره
                 Button(
                     onClick = {
-                        // ذخیره نام‌ها
-                        viewModel.updateSimTabName(0, newSim1Name.trim())
-                        viewModel.updateSimTabName(1, newSim2Name.trim())
+                        // ذخیره نام‌ها در UIPreferencesManager
+                        uiPrefsManager.updateSimTabName(0, newSim1Name.trim())
+                        uiPrefsManager.updateSimTabName(1, newSim2Name.trim())
 
                         // نمایش پیام موفقیت
                         showSuccessMessage = true

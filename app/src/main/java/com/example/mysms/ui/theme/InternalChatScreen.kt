@@ -1,8 +1,6 @@
 package com.example.mysms.ui.theme
 
 import android.content.ClipboardManager
-import com.example.mysms.ui.theme.AdvancedMessageBubble
-import com.example.mysms.ui.theme.LinkSecurityManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,7 +26,6 @@ import android.content.Context
 import android.util.Log
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mysms.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 
@@ -41,9 +38,12 @@ fun InternalChatScreen(
     draftMessage: String,
     onDraftChange: (String) -> Unit,
     address: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: HomeViewModel
 ) {
-    val vm: HomeViewModel = viewModel()
+    // دریافت UIPreferencesManager از ViewModel
+    val uiPrefsManager = viewModel.uiPrefsManager
+
     val sortedMessages = remember(messages) { messages.sortedBy { it.date } }
 
     val groupedMessages = remember(sortedMessages) {
@@ -67,16 +67,15 @@ fun InternalChatScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    // مشاهده وضعیت expand/collapse از ViewModel
-    val expandedDates by vm.expandedDates.collectAsState()
+    // مشاهده وضعیت expand/collapse از UIPreferencesManager
+    val expandedDates: Map<String, Boolean> by uiPrefsManager.expandedDates.collectAsState()
 
     // تنظیم وضعیت پیش‌فرض هنگام اولین بار
     LaunchedEffect(sortedKeys) {
         if (sortedKeys.isNotEmpty()) {
-            // فقط اگر برای این تاریخ‌ها وضعیتی تنظیم نشده، پیش‌فرض را اعمال کن
-            val hasAnyState = sortedKeys.any { vm.isDateExpanded(it) }
+            val hasAnyState = sortedKeys.any { uiPrefsManager.isDateExpanded(it) }
             if (!hasAnyState) {
-                vm.setDefaultExpansionState(sortedKeys)
+                uiPrefsManager.setDefaultExpansionState(sortedKeys)
             }
 
             // اسکرول به آخرین پیام
@@ -146,7 +145,7 @@ fun InternalChatScreen(
             contentPadding = PaddingValues(bottom = 8.dp, top = 8.dp)
         ) {
             sortedKeys.forEach { dateKey ->
-                val isExpanded = expandedDates[dateKey] ?: false
+                val isExpanded: Boolean = expandedDates[dateKey] ?: false
                 val messagesOfDay = groupedMessages[dateKey] ?: emptyList()
 
                 item(key = "date_$dateKey") {
@@ -162,7 +161,7 @@ fun InternalChatScreen(
                             color = Color(0x80000000), // سیاه با transparency 50%
                             modifier = Modifier
                                 .clickable {
-                                    vm.toggleDateExpansion(dateKey, !isExpanded)
+                                    uiPrefsManager.toggleDateExpansion(dateKey, !isExpanded)
                                 }
                         ) {
                             Row(

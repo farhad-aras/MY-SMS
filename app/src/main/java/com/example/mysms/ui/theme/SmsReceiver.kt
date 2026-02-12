@@ -1,6 +1,8 @@
 package com.example.mysms.ui.theme
 
 
+import com.example.mysms.manager.MultipartManager
+import kotlinx.coroutines.launch
 import androidx.annotation.RequiresApi
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -18,13 +20,10 @@ import androidx.core.app.NotificationCompat
 import com.example.mysms.R
 import com.example.mysms.data.AppDatabase
 import com.example.mysms.data.SmsEntity
-import com.example.mysms.repository.SmsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.util.*
-import kotlin.math.absoluteValue
-import kotlinx.coroutines.runBlocking
+
 
 
 class SmsReceiver : BroadcastReceiver() {
@@ -467,24 +466,26 @@ class SmsReceiver : BroadcastReceiver() {
     private fun processMultipartMessages(context: Context, smsList: List<SmsEntity>) {
         if (smsList.isEmpty()) return
 
-        runBlocking {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 val database = AppDatabase.getDatabase(context)
-                val repository = SmsRepository(context, database.smsDao())
+                val smsDao = database.smsDao()
+                val multipartManager = MultipartManager(smsDao, this)
 
                 // پردازش هر پیام
                 smsList.forEach { sms ->
                     try {
-                        val processedSms = repository.processMultipartMessage(sms)
-
-                        // اگر پیام کامل شد، نوتیفیکیشن نمایش بده
-                        if (processedSms.isComplete && processedSms.isMultipart) {
-                            Log.d("SmsReceiver", "🎉 پیام چندبخشی کامل شد، نمایش نوتیفیکیشن")
-                            // ✅ استفاده از showNewMessageNotification به جای تابع حذف شده
-                            showNewMessageNotification(context, processedSms)
-                        } else if (!sms.isMultipart) {
-                            // برای پیام‌های تک‌بخشی هم نوتیفیکیشن نمایش بده
-                            // ✅ استفاده از showNewMessageNotification به جای تابع حذف شده
+                        // بررسی آیا پیام چندبخشی است
+                        if (sms.isMultipart && sms.partCount > 1) {
+                            // پردازش از طریق MultipartManager
+                            multipartManager.processIncomingMultipart(sms) { completeSms ->
+                                // زمانی که پیام کامل شد
+                                Log.d("SmsReceiver", "🎉 پیام چندبخشی کامل شد، نمایش نوتیفیکیشن")
+                                showNewMessageNotification(context, completeSms)
+                            }
+                        } else {
+                            // پیام تک‌بخشی - مستقیم ذخیره و نوتیفیکیشن
+                            smsDao.insert(sms)
                             showNewMessageNotification(context, sms)
                         }
                     } catch (e: Exception) {
